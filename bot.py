@@ -67,6 +67,7 @@ MAIN_MENU_TEXT = (
 def get_main_keyboard():
     """Ana menü interaktif butonları"""
     keyboard = [
+        [InlineKeyboardButton("☀️ Bugün", callback_data="btn_today")],
         [
             InlineKeyboardButton("🌤️ Hava", callback_data="btn_weather"),
             InlineKeyboardButton("💹 Piyasalar", callback_data="btn_finance"),
@@ -206,6 +207,38 @@ async def finance_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     progress = await update.message.reply_text("💹 Piyasa özeti hazırlanıyor…")
     result = await get_market_rates()
     await progress.edit_text(result, parse_mode="Markdown", reply_markup=get_back_keyboard())
+
+
+async def build_today_summary(user_id):
+    city = db.get_default_city(user_id, DEFAULT_CITY)
+    weather = await get_weather(city)
+    tasks = [task for task in db.get_tasks(user_id) if not task["is_done"]]
+    reminders = db.get_pending_reminders(user_id)
+
+    task_lines = [f"• {escape_markdown(task['title'])}" for task in tasks[:3]]
+    task_text = "\n".join(task_lines) if task_lines else "_Bekleyen görev yok_"
+    if reminders:
+        next_reminder = reminders[0]
+        due_at = _as_utc(next_reminder["due_at"]).astimezone(LOCAL_TIMEZONE)
+        reminder_text = (
+            f"{escape_markdown(next_reminder['message'])}\n"
+            f"_{due_at.strftime('%d.%m · %H:%M')}_"
+        )
+    else:
+        reminder_text = "_Bekleyen hatırlatıcı yok_"
+
+    return (
+        "☀️ *Bugünün özeti*\n\n"
+        f"{weather}\n\n"
+        f"📋 *Görevler* · {len(tasks)} bekliyor\n{task_text}\n\n"
+        f"⏰ *Sıradaki hatırlatıcı*\n{reminder_text}"
+    )
+
+
+async def today_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    progress = await update.message.reply_text("☀️ Günün özeti hazırlanıyor…")
+    summary = await build_today_summary(update.effective_user.id)
+    await progress.edit_text(summary, parse_mode="Markdown", reply_markup=get_back_keyboard())
 
 
 # ─── NOT YÖNETİMİ ───
@@ -475,6 +508,11 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         res = await get_weather(city)
         await query.edit_message_text(res, parse_mode="Markdown", reply_markup=get_back_keyboard())
 
+    elif data == "btn_today":
+        await query.edit_message_text("☀️ Günün özeti hazırlanıyor…")
+        summary = await build_today_summary(query.from_user.id)
+        await query.edit_message_text(summary, parse_mode="Markdown", reply_markup=get_back_keyboard())
+
     elif data == "btn_finance":
         await query.edit_message_text("💹 Piyasa özeti hazırlanıyor…")
         res = await get_market_rates()
@@ -700,6 +738,7 @@ def main():
     app.add_handler(CommandHandler("hava", weather_command))
     app.add_handler(CommandHandler("sehir", city_command))
     app.add_handler(CommandHandler("piyasa", finance_command))
+    app.add_handler(CommandHandler("bugun", today_command))
     app.add_handler(CommandHandler("gorev", add_task_command))
     app.add_handler(CommandHandler("gorevler", list_tasks_command))
     app.add_handler(CommandHandler("not", add_note_command))

@@ -1,4 +1,6 @@
 import unittest
+from unittest.mock import AsyncMock, patch
+from datetime import datetime, timezone
 
 import bot
 
@@ -15,6 +17,7 @@ class UiTests(unittest.TestCase):
             callbacks,
             {
                 "btn_weather",
+                "btn_today",
                 "btn_finance",
                 "btn_tasks",
                 "btn_notes",
@@ -55,6 +58,22 @@ class UiTests(unittest.TestCase):
         self.assertEqual(
             markup["inline_keyboard"][0][0]["callback_data"], "cancel_input"
         )
+
+
+class TodaySummaryTests(unittest.IsolatedAsyncioTestCase):
+    async def test_today_summary_combines_daily_information(self):
+        with (
+            patch("bot.get_weather", new=AsyncMock(return_value="🌤️ Hava özeti")),
+            patch("bot.db.get_default_city", return_value="Ankara"),
+            patch("bot.db.get_tasks", return_value=[{"title": "Spor yap", "is_done": 0}]),
+            patch("bot.db.get_pending_reminders", return_value=[{
+                "message": "Su iç", "due_at": datetime.now(timezone.utc)
+            }]),
+        ):
+            result = await bot.build_today_summary(1)
+        self.assertIn("Bugünün özeti", result)
+        self.assertIn("Spor yap", result)
+        self.assertIn("Su iç", result)
 
 
 if __name__ == "__main__":
