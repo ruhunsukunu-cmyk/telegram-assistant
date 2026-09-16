@@ -11,6 +11,7 @@ Telefonunuzdan 7/24 erişebileceğiniz, görevlerinizi ve notlarınızı tutan, 
 - 📋 **Görev Takibi (To-Do):** Telegram içinden yapılacak işleri listeleme, tek tıkla `[✅ Tamamla]` veya `[🗑️ Sil]` butonları.
 - 📝 **Hızlı Not Defteri:** Aklınıza gelen fikir veya notları anında kaydetme ve listeleme.
 - ⏰ **Zaman Ayarlı Hatırlatıcı:** `/hatirlat 15 Çayı ocaktan al` dediğinizde, tam 15 dakika sonra bot size bildirim gönderir.
+- 💾 **Kalıcı veri desteği:** `DATABASE_URL` tanımlandığında notlar, görevler ve bekleyen hatırlatıcılar PostgreSQL'de saklanır; bot yeniden başlasa bile geri yüklenir.
 - 🎛️ **İnteraktif Menü:** Mesaj yazmadan butonlarla yönetebileceğiniz modern Inline Keyboard arayüzü.
 
 ---
@@ -28,7 +29,11 @@ Proje klasöründeki `.env` dosyasını açın ve tokenınızı ekleyin:
 ```env
 TELEGRAM_BOT_TOKEN=123456789:ABCdefGhIJKlmNoPQRstuvWxyz
 DEFAULT_CITY=Istanbul
+DATABASE_URL=postgresql://kullanici:sifre@sunucu/veritabani
 ```
+
+`DATABASE_URL` yerel geliştirmede isteğe bağlıdır. Render üzerinde kalıcı kullanım için
+harici bir PostgreSQL bağlantısı tanımlayın; aksi halde geçici SQLite dosyası kullanılır.
 
 ### 3. Botu Çalıştırın
 - **En Kolay Yol:** Proje klasöründeki `start.bat` dosyasına çift tıklayın!

@@ -31,6 +31,18 @@ class DatabaseTests(unittest.TestCase):
         self.assertEqual(database.get_tasks(1)[0]["is_done"], 1)
         self.assertTrue(database.delete_task(task_id, 1))
 
+    def test_reminder_is_persisted_and_marked_sent(self):
+        from datetime import datetime, timedelta, timezone
+
+        reminder_id = database.add_reminder(
+            1, 99, "su iç", datetime.now(timezone.utc) + timedelta(minutes=5)
+        )
+        pending = database.get_pending_reminders()
+        self.assertEqual(len(pending), 1)
+        self.assertEqual(pending[0]["message"], "su iç")
+        self.assertTrue(database.mark_reminder_sent(reminder_id))
+        self.assertEqual(database.get_pending_reminders(), [])
+
 
 if __name__ == "__main__":
     unittest.main()

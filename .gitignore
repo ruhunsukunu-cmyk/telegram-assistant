@@ -1,6 +1,7 @@
 venv/
 .venv/
 .deps/
+.test-tmp/
 .env
 *.db
 __pycache__/

@@ -1,7 +1,7 @@
 import os
 import sys
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 # Windows konsolunda emoji karakterlerinin hata vermesini engelle
 if sys.platform == "win32":
@@ -12,6 +12,7 @@ if sys.platform == "win32":
         pass
 
 from dotenv import load_dotenv
+load_dotenv()
 import threading
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from telegram import (
@@ -51,9 +52,6 @@ from telegram.ext import (
 import database as db
 from services.weather import get_weather
 from services.finance import get_market_rates
-
-# Ortam değişkenlerini yükle
-load_dotenv()
 
 # Loglama ayarları
 logging.basicConfig(
@@ -183,7 +181,7 @@ async def list_notes_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
     msg = "📝 *Kaydedilen Notlarınız:*\n━━━━━━━━━━━━━━━━━━━━━\n"
     keyboard = []
     for n in notes[:10]:  # Son 10 not
-        dt = n["created_at"].split()[0] if n["created_at"] else ""
+        dt = str(n["created_at"]).split()[0] if n["created_at"] else ""
         msg += f"• `{escape_markdown(n['content'])}` _({dt})_\n"
         keyboard.append([
             InlineKeyboardButton(f"🗑️ Sil: {n['content'][:20]}...", callback_data=f"del_note_{n['id']}")
@@ -256,7 +254,8 @@ async def reminder_callback(context: ContextTypes.DEFAULT_TYPE):
     """Zamanı gelen hatırlatmayı kullanıcıya iletir"""
     job = context.job
     chat_id = job.chat_id
-    message_text = job.data
+    reminder_id = job.data["id"]
+    message_text = job.data["message"]
 
     alarm_msg = (
         "⏰ *DİKKAT! HATIRLATMA ZAMANI!*\n"
@@ -265,6 +264,33 @@ async def reminder_callback(context: ContextTypes.DEFAULT_TYPE):
         f"🕒 *Zaman:* {datetime.now().strftime('%H:%M')}"
     )
     await context.bot.send_message(chat_id=chat_id, text=alarm_msg, parse_mode="Markdown")
+    db.mark_reminder_sent(reminder_id)
+
+
+def _as_utc(value):
+    if isinstance(value, str):
+        value = datetime.fromisoformat(value)
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
+async def restore_reminders(app):
+    """Yeniden başlatmadan sonra bekleyen hatırlatıcıları tekrar sıraya al."""
+    now = datetime.now(timezone.utc)
+    restored = 0
+    for reminder in db.get_pending_reminders():
+        due_at = _as_utc(reminder["due_at"])
+        app.job_queue.run_once(
+            reminder_callback,
+            when=max((due_at - now).total_seconds(), 1),
+            chat_id=reminder["chat_id"],
+            data={"id": reminder["id"], "message": reminder["message"]},
+            name=f"reminder-{reminder['id']}",
+        )
+        restored += 1
+    if restored:
+        logger.info("%s bekleyen hatırlatıcı yeniden yüklendi.", restored)
 
 
 async def remind_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -290,12 +316,16 @@ async def remind_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     remind_text = " ".join(context.args[1:])
     seconds = int(minutes * 60)
     chat_id = update.effective_chat.id
+    user_id = update.effective_user.id
+    due_at = datetime.now(timezone.utc) + timedelta(seconds=seconds)
+    reminder_id = db.add_reminder(user_id, chat_id, remind_text, due_at)
 
     context.job_queue.run_once(
         reminder_callback,
         when=seconds,
         chat_id=chat_id,
-        data=remind_text
+        data={"id": reminder_id, "message": remind_text},
+        name=f"reminder-{reminder_id}",
     )
 
     await update.message.reply_text(
@@ -416,7 +446,7 @@ def main():
             logger.warning(f"Sağlık sunucusu başlatılamadı: {e}")
 
     print("🚀 Telegram Asistan Botu başlatılıyor...")
-    app = ApplicationBuilder().token(TOKEN).build()
+    app = ApplicationBuilder().token(TOKEN).post_init(restore_reminders).build()
 
     # Komut yöneticileri
     app.add_handler(CommandHandler("start", start_command))
