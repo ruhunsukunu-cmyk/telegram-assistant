@@ -3,12 +3,22 @@ import sqlite3
 from contextlib import contextmanager
 from datetime import datetime, timezone
 
-DB_PATH = os.path.join(os.path.dirname(__file__), "assistant.db")
+DB_PATH = os.getenv(
+    "DB_PATH", os.path.join(os.path.dirname(__file__), "assistant.db")
+).strip()
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
 
 
 def _uses_postgres():
     return bool(DATABASE_URL)
+
+
+def storage_label():
+    if _uses_postgres():
+        return "PostgreSQL"
+    if os.getenv("DB_PATH", "").strip():
+        return "kalıcı SQLite"
+    return "yerel SQLite"
 
 
 @contextmanager
@@ -18,6 +28,9 @@ def get_db():
         from psycopg.rows import dict_row
         conn = connect(DATABASE_URL, row_factory=dict_row)
     else:
+        db_directory = os.path.dirname(DB_PATH)
+        if db_directory:
+            os.makedirs(db_directory, exist_ok=True)
         conn = sqlite3.connect(DB_PATH)
         conn.row_factory = sqlite3.Row
     try:

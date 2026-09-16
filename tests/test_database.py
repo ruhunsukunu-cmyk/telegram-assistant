@@ -24,6 +24,16 @@ class DatabaseTests(unittest.TestCase):
         self.assertFalse(database.delete_note(note_id, 2))
         self.assertTrue(database.delete_note(note_id, 1))
 
+    def test_sqlite_creates_configured_parent_directory(self):
+        nested_path = os.path.join(self.temp_dir.name, "volume", "assistant.db")
+        with patch.object(database, "DB_PATH", nested_path):
+            database.init_db()
+        self.assertTrue(os.path.isfile(nested_path))
+
+    def test_storage_label_distinguishes_persistent_sqlite(self):
+        with patch.dict(os.environ, {"DB_PATH": "/data/assistant.db"}):
+            self.assertEqual(database.storage_label(), "kalıcı SQLite")
+
     def test_task_lifecycle_and_owner_check(self):
         task_id = database.add_task(1, "testleri çalıştır")
         self.assertFalse(database.complete_task(task_id, 2))

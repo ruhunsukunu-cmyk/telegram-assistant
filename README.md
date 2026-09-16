@@ -11,7 +11,7 @@ Telefonunuzdan 7/24 erişebileceğiniz, görevlerinizi ve notlarınızı tutan, 
 - 📋 **Görev Takibi (To-Do):** Telegram içinden yapılacak işleri listeleme, tek tıkla `[✅ Tamamla]` veya `[🗑️ Sil]` butonları.
 - 📝 **Hızlı Not Defteri:** Aklınıza gelen fikir veya notları anında kaydetme ve listeleme.
 - ⏰ **Zaman Ayarlı Hatırlatıcı:** `/hatirlat 15 Çayı ocaktan al` dediğinizde, tam 15 dakika sonra bot size bildirim gönderir.
-- 💾 **Kalıcı veri desteği:** `DATABASE_URL` tanımlandığında notlar, görevler ve bekleyen hatırlatıcılar PostgreSQL'de saklanır; bot yeniden başlasa bile geri yüklenir.
+- 💾 **Kalıcı veri desteği:** PostgreSQL (`DATABASE_URL`) veya kalıcı disk üzerindeki SQLite (`DB_PATH`) ile bot yeniden başlasa bile kayıtlar korunur.
 - 🎛️ **İnteraktif Menü:** Mesaj yazmadan butonlarla yönetebileceğiniz modern Inline Keyboard arayüzü.
 - ✨ **Yetenek Rehberi:** Ana menüdeki “Bu bot ne işe yarar?” ekranı bütün özellikleri tek yerde açıklar.
 
@@ -31,10 +31,30 @@ Proje klasöründeki `.env` dosyasını açın ve tokenınızı ekleyin:
 TELEGRAM_BOT_TOKEN=123456789:ABCdefGhIJKlmNoPQRstuvWxyz
 DEFAULT_CITY=Istanbul
 DATABASE_URL=postgresql://kullanici:sifre@sunucu/veritabani
+# Railway Volume kullanırken PostgreSQL yerine:
+# DB_PATH=/data/assistant.db
 ```
 
 `DATABASE_URL` yerel geliştirmede isteğe bağlıdır. Render üzerinde kalıcı kullanım için
 harici bir PostgreSQL bağlantısı tanımlayın; aksi halde geçici SQLite dosyası kullanılır.
+
+## Railway Hobby kurulumu
+
+1. GitHub deposunu Railway'de yeni bir projeye bağlayın.
+2. Servise bir Volume ekleyip bağlama yolunu `/data` olarak ayarlayın.
+3. Aşağıdaki değişkenleri tanımlayın:
+
+```env
+TELEGRAM_BOT_TOKEN=BotFather_tokeni
+DB_PATH=/data/assistant.db
+WEBHOOK_URL=https://railway-servis-alan-adiniz.up.railway.app
+MINI_APP_URL=https://telegram-assistant-panel.onrender.com
+DEFAULT_CITY=Istanbul
+TIMEZONE=Europe/Istanbul
+```
+
+`DATABASE_URL` ve `DB_PATH` birlikte tanımlanırsa PostgreSQL kullanılır. Kalıcı Volume
+ile düşük trafikli kişisel kullanımda yalnızca `DB_PATH` tanımlamak daha ekonomiktir.
 
 ### 3. Botu Çalıştırın
 - **En Kolay Yol:** Proje klasöründeki `start.bat` dosyasına çift tıklayın!

@@ -847,7 +847,7 @@ async def delete_data_command(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 
 async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    storage = "PostgreSQL" if db.DATABASE_URL else "geçici SQLite"
+    storage = db.storage_label()
     mode = "webhook" if get_webhook_config() else "polling"
     await update.message.reply_text(
         f"🟢 Bot çalışıyor\n• Bağlantı: {mode}\n• Veri deposu: {storage}\n"
