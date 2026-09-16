@@ -69,11 +69,10 @@ ALLOWED_USER_IDS = {
 ADMIN_CHAT_ID = os.getenv("ADMIN_CHAT_ID", "").strip()
 
 MAIN_MENU_TEXT = (
-    "✨ *Kişisel Asistan Paneli*\n"
+    "✨ *Kişisel Asistan*\n"
     "━━━━━━━━━━━━━━━━━━━━━\n"
-    "Bugün ne yapmak istersin?\n\n"
-    "🌤️ Güncel bilgi  •  📋 Planlama\n"
-    "📝 Notlar             •  ⏰ Hatırlatıcılar"
+    "Gününü planla, takip et ve tek yerden yönet.\n\n"
+    "Aşağıdan yapmak istediğin işlemi seç 👇"
 )
 
 
@@ -82,23 +81,25 @@ def get_main_keyboard():
     keyboard = [
         [InlineKeyboardButton("☀️ Bugün", callback_data="btn_today")],
         [
-            InlineKeyboardButton("🌤️ Hava", callback_data="btn_weather"),
-            InlineKeyboardButton("💹 Piyasalar", callback_data="btn_finance"),
-        ],
-        [
             InlineKeyboardButton("📋 Görevler", callback_data="btn_tasks"),
-            InlineKeyboardButton("📝 Notlar", callback_data="btn_notes"),
+            InlineKeyboardButton("⏰ Hatırlatıcılar", callback_data="btn_reminders"),
         ],
         [
             InlineKeyboardButton("🎯 Alışkanlıklar", callback_data="btn_habits"),
             InlineKeyboardButton("💳 Harcamalar", callback_data="btn_expenses"),
         ],
         [
-            InlineKeyboardButton("➕ Hızlı ekle", callback_data="btn_quick_add"),
-            InlineKeyboardButton("⏰ Hatırlatıcılar", callback_data="btn_reminders"),
+            InlineKeyboardButton("📝 Notlar", callback_data="btn_notes"),
+            InlineKeyboardButton("📅 Takvim", callback_data="btn_calendar"),
         ],
         [
-            InlineKeyboardButton("❓ Yardım ve komutlar", callback_data="btn_help"),
+            InlineKeyboardButton("🌤️ Hava", callback_data="btn_weather"),
+            InlineKeyboardButton("💹 Piyasalar", callback_data="btn_finance"),
+        ],
+        [InlineKeyboardButton("➕ Hızlı ekle", callback_data="btn_quick_add")],
+        [
+            InlineKeyboardButton("✨ Bu bot ne işe yarar?", callback_data="btn_about"),
+            InlineKeyboardButton("❓ Yardım", callback_data="btn_help"),
         ]
     ]
     if MINI_APP_URL:
@@ -181,21 +182,49 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     help_text = (
         "❓ *Yardım merkezi*\n"
         "━━━━━━━━━━━━━━━━━━━━━\n"
-        "`/hava Ankara` — hava durumu\n"
-        "`/sehir Ankara` — varsayılan şehri kaydet\n"
-        "`/bugun` — kişisel günlük özet\n"
-        "`/piyasa` — döviz ve kripto\n"
+        "En sık kullanılan örnekler:\n\n"
         "`/gorev Kitap oku` — görev ekle\n"
-        "`/gorevler` — görevleri görüntüle\n"
-        "`/not Fikir metni` — not kaydet\n"
-        "`/notlar` — notları görüntüle\n"
         "`/hatirlat 15 Su iç` — hatırlatıcı kur\n"
-        "`/hatirlaticilar` — bekleyen hatırlatıcılar\n"
-        "`/ara toplantı` — görev ve notlarda ara\n"
-        "`/temizle` — tamamlanan görevleri temizle\n"
-        "`/menu` — ana paneli aç"
+        "`/not Fikir metni` — not kaydet\n"
+        "`/harcama 250 market` — harcama kaydet\n"
+        "`/etkinlik yarın 14:00 | Doktor` — etkinlik ekle\n"
+        "`/aliskanlik ekle Kitap oku` — alışkanlık başlat\n"
+        "`/ara toplantı` — görev ve notlarında ara\n\n"
+        "💡 Komut ezberlemek zorunda değilsin; `/menu` yazıp butonları kullanabilir "
+        "veya _yarın saat 10 doktoru hatırlat_ gibi doğal bir cümle gönderebilirsin."
     )
     await show_panel(update, help_text, get_back_keyboard())
+
+
+async def about_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = (
+        "✨ *Bu bot ne işe yarar?*\n"
+        "━━━━━━━━━━━━━━━━━━━━━\n"
+        "Günlük hayatını Telegram'dan yönetmen için hazırlanmış kişisel asistandır.\n\n"
+        "📋 *Planlama*\n"
+        "• Görev ekler, tamamlar ve önceliklendirir\n"
+        "• Son tarihli görevleri ve günlük özeti gösterir\n"
+        "• Notlarını kaydeder ve tüm kayıtlarda arama yapar\n\n"
+        "⏰ *Hatırlatıcılar ve takvim*\n"
+        "• Dakikalık, tarihli, günlük ve haftalık hatırlatıcı kurar\n"
+        "• Türkçe cümleleri anlar: _yarın saat 10 doktoru hatırlat_\n"
+        "• Etkinlikleri takip eder, Google/Outlook uyumlu takvim dosyası verir\n\n"
+        "🎯 *Rutinler ve finans*\n"
+        "• Alışkanlıklarını günlük işaretler ve haftalık oranı hesaplar\n"
+        "• Harcamalarını kategorilere ayırır, bütçeni ve kalan tutarı gösterir\n"
+        "• Harcamaları Excel uyumlu CSV olarak indirir\n\n"
+        "🌤️ *Güncel bilgiler*\n"
+        "• Seçtiğin şehrin hava durumunu gösterir\n"
+        "• Döviz ve kripto piyasalarını özetler\n\n"
+        "🔐 *Verilerin*\n"
+        "• Tüm verilerini JSON olarak indirebilir veya tamamen silebilirsin\n"
+        "• Her kullanıcının kayıtları birbirinden ayrıdır"
+    )
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("➕ Hemen bir şey ekle", callback_data="btn_quick_add")],
+        [InlineKeyboardButton("‹ Ana menü", callback_data="btn_home")],
+    ])
+    await show_panel(update, text, keyboard)
 
 
 # ─── HAVA DURUMU ───
@@ -530,6 +559,7 @@ async def initialize_app(app):
         BotCommand("durum", "Botun çalışma durumunu göster"),
         BotCommand("ozetsaat", "Otomatik günlük özet saatini ayarla"),
         BotCommand("verilerimisil", "Tüm kişisel verilerini sil"),
+        BotCommand("hakkinda", "Botun yapabildiği her şeyi göster"),
         BotCommand("help", "Yardım merkezini aç"),
     ])
     await restore_reminders(app)
@@ -921,6 +951,9 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == "btn_expenses":
         await expenses_command(update, context)
 
+    elif data == "btn_calendar":
+        await calendar_command(update, context)
+
     elif data == "btn_remind_help":
         context.user_data["pending_action"] = "reminder"
         await show_panel(
@@ -933,9 +966,16 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif data == "btn_quick_add":
         keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("📋 Görev ekle", callback_data="quick_task")],
-            [InlineKeyboardButton("📝 Not ekle", callback_data="quick_note")],
+            [
+                InlineKeyboardButton("📋 Görev", callback_data="quick_task"),
+                InlineKeyboardButton("📝 Not", callback_data="quick_note"),
+            ],
             [InlineKeyboardButton("⏰ Hatırlatıcı kur", callback_data="btn_remind_help")],
+            [
+                InlineKeyboardButton("🎯 Alışkanlık", callback_data="btn_habits"),
+                InlineKeyboardButton("💳 Harcama", callback_data="btn_expenses"),
+            ],
+            [InlineKeyboardButton("📅 Takvimi aç", callback_data="btn_calendar")],
             [InlineKeyboardButton("‹ Ana menü", callback_data="btn_home")],
         ])
         await show_panel(
@@ -965,6 +1005,9 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif data == "btn_help":
         await help_command(update, context)
+
+    elif data == "btn_about":
+        await about_command(update, context)
 
     elif data.startswith("done_task_"):
         task_id = int(data.replace("done_task_", ""))
@@ -1240,6 +1283,7 @@ def main():
     app.add_handler(TypeHandler(Update, access_guard), group=-1)
     app.add_handler(CommandHandler("start", start_command))
     app.add_handler(CommandHandler("menu", menu_command))
+    app.add_handler(CommandHandler("hakkinda", about_command))
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("hava", weather_command))
     app.add_handler(CommandHandler("sehir", city_command))

@@ -13,6 +13,7 @@ Telefonunuzdan 7/24 erişebileceğiniz, görevlerinizi ve notlarınızı tutan, 
 - ⏰ **Zaman Ayarlı Hatırlatıcı:** `/hatirlat 15 Çayı ocaktan al` dediğinizde, tam 15 dakika sonra bot size bildirim gönderir.
 - 💾 **Kalıcı veri desteği:** `DATABASE_URL` tanımlandığında notlar, görevler ve bekleyen hatırlatıcılar PostgreSQL'de saklanır; bot yeniden başlasa bile geri yüklenir.
 - 🎛️ **İnteraktif Menü:** Mesaj yazmadan butonlarla yönetebileceğiniz modern Inline Keyboard arayüzü.
+- ✨ **Yetenek Rehberi:** Ana menüdeki “Bu bot ne işe yarar?” ekranı bütün özellikleri tek yerde açıklar.
 
 ---
 
@@ -52,6 +53,7 @@ Telegram'da kendi botunuza gidin ve **/start** yazarak asistanınızı kullanmay
 | Komut | Açıklama | Örnek |
 |---|---|---|
 | `/start` | Ana karşılama panelini ve interaktif butonları açar | `/start` |
+| `/hakkinda` | Botun yapabildiği bütün işleri kategoriler halinde gösterir | `/hakkinda` |
 | `/hava <şehir>` | İstenen şehrin canlı hava durumunu getirir | `/hava ankara` |
 | `/sehir <şehir>` | Menüde kullanılacak varsayılan şehri kaydeder | `/sehir Ankara` |
 | `/bugun` | Hava, görev ve sıradaki hatırlatıcı özetini gösterir | `/bugun` |

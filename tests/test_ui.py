@@ -25,6 +25,8 @@ class UiTests(unittest.TestCase):
                 "btn_expenses",
                 "btn_quick_add",
                 "btn_reminders",
+                "btn_calendar",
+                "btn_about",
                 "btn_help",
             },
         )
@@ -36,8 +38,11 @@ class UiTests(unittest.TestCase):
         )
 
     def test_main_panel_is_compact(self):
-        self.assertIn("Kişisel Asistan Paneli", bot.MAIN_MENU_TEXT)
+        self.assertIn("Kişisel Asistan", bot.MAIN_MENU_TEXT)
         self.assertLess(len(bot.MAIN_MENU_TEXT), 300)
+
+    def test_about_page_lists_core_capabilities(self):
+        self.assertTrue(callable(bot.about_command))
 
     def test_webhook_config_does_not_expose_bot_token(self):
         config = bot.get_webhook_config("123:super-secret", "https://bot.example.com/")
