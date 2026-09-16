@@ -177,10 +177,27 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ─── HAVA DURUMU ───
 async def weather_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """/hava <şehir> komutu"""
-    city = " ".join(context.args).strip() if context.args else DEFAULT_CITY
+    city = " ".join(context.args).strip() if context.args else db.get_default_city(update.effective_user.id, DEFAULT_CITY)
     progress = await update.message.reply_text("🌤️ Hava durumu hazırlanıyor…")
     result = await get_weather(city)
     await progress.edit_text(result, parse_mode="Markdown", reply_markup=get_back_keyboard())
+
+
+async def city_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.args:
+        city = db.get_default_city(update.effective_user.id, DEFAULT_CITY)
+        await update.message.reply_text(
+            f"📍 Varsayılan şehrin: *{escape_markdown(city)}*\n\n"
+            "Değiştirmek için: `/sehir Ankara`",
+            parse_mode="Markdown",
+        )
+        return
+    city = " ".join(context.args).strip()[:100]
+    db.set_default_city(update.effective_user.id, city)
+    await update.message.reply_text(
+        f"✅ Varsayılan şehir *{escape_markdown(city)}* olarak kaydedildi.",
+        parse_mode="Markdown",
+    )
 
 
 # ─── FİNANS & KURLAR ───
@@ -454,7 +471,8 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif data == "btn_weather":
         await query.edit_message_text("🌤️ Hava durumu hazırlanıyor…")
-        res = await get_weather(DEFAULT_CITY)
+        city = db.get_default_city(query.from_user.id, DEFAULT_CITY)
+        res = await get_weather(city)
         await query.edit_message_text(res, parse_mode="Markdown", reply_markup=get_back_keyboard())
 
     elif data == "btn_finance":
@@ -680,6 +698,7 @@ def main():
     app.add_handler(CommandHandler("menu", menu_command))
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("hava", weather_command))
+    app.add_handler(CommandHandler("sehir", city_command))
     app.add_handler(CommandHandler("piyasa", finance_command))
     app.add_handler(CommandHandler("gorev", add_task_command))
     app.add_handler(CommandHandler("gorevler", list_tasks_command))

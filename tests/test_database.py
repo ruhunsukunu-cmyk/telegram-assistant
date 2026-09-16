@@ -55,6 +55,13 @@ class DatabaseTests(unittest.TestCase):
         self.assertTrue(database.cancel_reminder(reminder_id, 1))
         self.assertEqual(database.get_pending_reminders(1), [])
 
+    def test_user_can_set_default_city(self):
+        self.assertEqual(database.get_default_city(1, "Istanbul"), "Istanbul")
+        database.set_default_city(1, "Ankara")
+        self.assertEqual(database.get_default_city(1), "Ankara")
+        database.set_default_city(1, "İzmir")
+        self.assertEqual(database.get_default_city(1), "İzmir")
+
 
 if __name__ == "__main__":
     unittest.main()

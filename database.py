@@ -49,6 +49,7 @@ def init_db():
         cursor.execute(f"CREATE TABLE IF NOT EXISTS notes (id {id_column}, user_id BIGINT NOT NULL, content TEXT NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)")
         cursor.execute(f"CREATE TABLE IF NOT EXISTS tasks (id {id_column}, user_id BIGINT NOT NULL, title TEXT NOT NULL, is_done INTEGER DEFAULT 0, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)")
         cursor.execute(f"CREATE TABLE IF NOT EXISTS reminders (id {id_column}, user_id BIGINT NOT NULL, chat_id BIGINT NOT NULL, message TEXT NOT NULL, due_at TIMESTAMP NOT NULL, sent_at TIMESTAMP NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)")
+        cursor.execute("CREATE TABLE IF NOT EXISTS user_settings (user_id BIGINT PRIMARY KEY, default_city TEXT NOT NULL)")
         conn.commit()
 
 
@@ -118,6 +119,33 @@ def cancel_reminder(reminder_id, user_id):
         "DELETE FROM reminders WHERE id = ? AND user_id = ? AND sent_at IS NULL",
         (reminder_id, user_id),
     )
+
+
+def set_default_city(user_id, city):
+    city = city.strip()[:100]
+    with get_db() as conn:
+        cursor = conn.cursor()
+        if _uses_postgres():
+            cursor.execute(
+                "INSERT INTO user_settings (user_id, default_city) VALUES (%s, %s) "
+                "ON CONFLICT (user_id) DO UPDATE SET default_city = EXCLUDED.default_city",
+                (user_id, city),
+            )
+        else:
+            cursor.execute(
+                "INSERT INTO user_settings (user_id, default_city) VALUES (?, ?) "
+                "ON CONFLICT(user_id) DO UPDATE SET default_city = excluded.default_city",
+                (user_id, city),
+            )
+        conn.commit()
+
+
+def get_default_city(user_id, fallback="Istanbul"):
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(_sql("SELECT default_city FROM user_settings WHERE user_id = ?"), (user_id,))
+        row = cursor.fetchone()
+        return row["default_city"] if row else fallback
 
 
 def _change(query, params):
