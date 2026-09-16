@@ -45,6 +45,29 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
             result = await get_weather("yok")
         self.assertIn("bulunamadı", result)
 
+    async def test_weather_falls_back_when_open_meteo_is_rate_limited(self):
+        limited = response({})
+        limited.status_code = 429
+        met = response({
+            "properties": {"timeseries": [{"data": {
+                "instant": {"details": {
+                    "air_temperature": 18.5,
+                    "relative_humidity": 61,
+                    "wind_speed": 3.2,
+                }},
+                "next_1_hours": {"summary": {"symbol_code": "partlycloudy_day"}},
+            }}]}
+        })
+        responses = [
+            response({"results": [{"latitude": 41, "longitude": 29, "name": "Istanbul", "country": "Türkiye"}]}),
+            limited,
+            met,
+        ]
+        with patch("services.weather.httpx.AsyncClient", return_value=AsyncClientContext(responses)):
+            result = await get_weather("Istanbul")
+        self.assertIn("18.5°C", result)
+        self.assertIn("Parçalı Bulutlu", result)
+
     async def test_finance_missing_crypto_values_do_not_crash(self):
         responses = [response({"rates": {"USD": 0.025, "EUR": 0.023, "GBP": 0.02}}), response({})]
         with patch("services.finance.httpx.AsyncClient", return_value=AsyncClientContext(responses)):
