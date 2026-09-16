@@ -3,6 +3,7 @@ import sys
 import logging
 import hashlib
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 # Windows konsolunda emoji karakterlerinin hata vermesini engelle
 if sys.platform == "win32":
@@ -48,6 +49,7 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
 DEFAULT_CITY = os.getenv("DEFAULT_CITY", "Istanbul")
+LOCAL_TIMEZONE = ZoneInfo(os.getenv("TIMEZONE", "Europe/Istanbul"))
 WEBHOOK_BASE_URL = (
     os.getenv("WEBHOOK_URL", "").strip()
     or os.getenv("RENDER_EXTERNAL_URL", "").strip()
@@ -75,7 +77,7 @@ def get_main_keyboard():
         ],
         [
             InlineKeyboardButton("➕ Hızlı ekle", callback_data="btn_quick_add"),
-            InlineKeyboardButton("⏰ Hatırlatıcı", callback_data="btn_remind_help"),
+            InlineKeyboardButton("⏰ Hatırlatıcılar", callback_data="btn_reminders"),
         ],
         [
             InlineKeyboardButton("❓ Yardım ve komutlar", callback_data="btn_help"),
@@ -145,6 +147,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "`/not Fikir metni` — not kaydet\n"
         "`/notlar` — notları görüntüle\n"
         "`/hatirlat 15 Su iç` — hatırlatıcı kur\n"
+        "`/hatirlaticilar` — bekleyen hatırlatıcılar\n"
         "`/menu` — ana paneli aç"
     )
     await show_panel(update, help_text, get_back_keyboard())
@@ -318,6 +321,7 @@ async def initialize_app(app):
         BotCommand("not", "Yeni not kaydet"),
         BotCommand("notlar", "Notlarını görüntüle"),
         BotCommand("hatirlat", "Dakika bazlı hatırlatıcı kur"),
+        BotCommand("hatirlaticilar", "Bekleyen hatırlatıcılarını görüntüle"),
         BotCommand("hava", "Şehir hava durumunu göster"),
         BotCommand("piyasa", "Döviz ve kripto özetini göster"),
         BotCommand("help", "Yardım merkezini aç"),
@@ -368,6 +372,45 @@ async def remind_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+async def list_reminders_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Bekleyen hatırlatıcıları göster ve iptal etmeyi kolaylaştır."""
+    user_id = update.effective_user.id
+    reminders = db.get_pending_reminders(user_id)
+
+    if not reminders:
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("➕ Hatırlatıcı oluştur", callback_data="btn_remind_help")],
+            [InlineKeyboardButton("‹ Ana menü", callback_data="btn_home")],
+        ])
+        await show_panel(
+            update,
+            "⏰ *Hatırlatıcıların*\n━━━━━━━━━━━━━━━━━━━━━\n"
+            "Bekleyen hatırlatıcın yok.",
+            keyboard,
+        )
+        return
+
+    text = f"⏰ *Hatırlatıcıların*  ·  _{len(reminders)} bekliyor_\n━━━━━━━━━━━━━━━━━━━━━\n"
+    keyboard = []
+    for index, reminder in enumerate(reminders[:15], 1):
+        due_at = _as_utc(reminder["due_at"]).astimezone(LOCAL_TIMEZONE)
+        text += (
+            f"\n*{index}.* {escape_markdown(reminder['message'])}\n"
+            f"   _{due_at.strftime('%d.%m.%Y · %H:%M')}_\n"
+        )
+        keyboard.append([
+            InlineKeyboardButton(
+                f"✕ {index}. hatırlatıcıyı iptal et",
+                callback_data=f"ask_cancel_reminder_{reminder['id']}",
+            )
+        ])
+    keyboard.extend([
+        [InlineKeyboardButton("➕ Yeni hatırlatıcı", callback_data="btn_remind_help")],
+        [InlineKeyboardButton("‹ Ana menü", callback_data="btn_home")],
+    ])
+    await show_panel(update, text, InlineKeyboardMarkup(keyboard))
+
+
 # ─────────────────────────────────────────
 # BUTON ETKİLEŞİMLERİ (CALLBACK QUERY)
 # ─────────────────────────────────────────
@@ -394,6 +437,9 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif data == "btn_notes":
         await list_notes_command(update, context)
+
+    elif data == "btn_reminders":
+        await list_reminders_command(update, context)
 
     elif data == "btn_remind_help":
         await show_panel(
@@ -456,6 +502,22 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         db.delete_note(note_id, user_id)
         await list_notes_command(update, context)
 
+    elif data.startswith("ask_cancel_reminder_"):
+        reminder_id = int(data.replace("ask_cancel_reminder_", ""))
+        keyboard = InlineKeyboardMarkup([[
+            InlineKeyboardButton("Evet, iptal et", callback_data=f"confirm_cancel_reminder_{reminder_id}"),
+            InlineKeyboardButton("Vazgeç", callback_data="btn_reminders"),
+        ]])
+        await show_panel(update, "⏰ *Bu hatırlatıcıyı iptal etmek istediğine emin misin?*", keyboard)
+
+    elif data.startswith("confirm_cancel_reminder_"):
+        reminder_id = int(data.replace("confirm_cancel_reminder_", ""))
+        user_id = query.from_user.id
+        if db.cancel_reminder(reminder_id, user_id):
+            for job in context.job_queue.get_jobs_by_name(f"reminder-{reminder_id}"):
+                job.schedule_removal()
+        await list_reminders_command(update, context)
+
 
 # ─── SERBEST METİN YANITLAYICI ───
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -517,6 +579,7 @@ def main():
     app.add_handler(CommandHandler("not", add_note_command))
     app.add_handler(CommandHandler("notlar", list_notes_command))
     app.add_handler(CommandHandler("hatirlat", remind_command))
+    app.add_handler(CommandHandler("hatirlaticilar", list_reminders_command))
 
     # Callback & Metin yöneticileri
     app.add_handler(CallbackQueryHandler(handle_callback))

@@ -59,4 +59,5 @@ Telegram'da kendi botunuza gidin ve **/start** yazarak asistanınızı kullanmay
 | `/not <metin>` | Veritabanına hızlı not kaydeder | `/not Toplantı notları...` |
 | `/notlar` | Kayıtlı notlarınızı listeler | `/notlar` |
 | `/hatirlat <dk> <mesaj>` | Belirtilen dakika sonra alarmlı bildirim atar | `/hatirlat 20 Fırını kapat` |
+| `/hatirlaticilar` | Bekleyen hatırlatıcıları listeler ve iptal ettirir | `/hatirlaticilar` |
 | `/help` | Tüm komutları ve yardım rehberini gösterir | `/help` |

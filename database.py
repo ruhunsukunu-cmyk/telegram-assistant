@@ -95,15 +95,29 @@ def add_reminder(user_id, chat_id, message, due_at: datetime):
         return _insert_and_get_id(conn, "INSERT INTO reminders (user_id, chat_id, message, due_at) VALUES (?, ?, ?, ?)", (user_id, chat_id, message.strip(), due_value))
 
 
-def get_pending_reminders():
+def get_pending_reminders(user_id=None):
     with get_db() as conn:
         cursor = conn.cursor()
-        cursor.execute("SELECT id, user_id, chat_id, message, due_at FROM reminders WHERE sent_at IS NULL ORDER BY due_at")
+        query = "SELECT id, user_id, chat_id, message, due_at FROM reminders WHERE sent_at IS NULL"
+        params = ()
+        if user_id is not None:
+            query += " AND user_id = ?"
+            params = (user_id,)
+        query += " ORDER BY due_at"
+        cursor.execute(_sql(query), params)
         return cursor.fetchall()
 
 
 def mark_reminder_sent(reminder_id):
     return _change("UPDATE reminders SET sent_at = CURRENT_TIMESTAMP WHERE id = ? AND sent_at IS NULL", (reminder_id,))
+
+
+def cancel_reminder(reminder_id, user_id):
+    """Yalnızca sahibine ait ve henüz gönderilmemiş hatırlatıcıyı iptal et."""
+    return _change(
+        "DELETE FROM reminders WHERE id = ? AND user_id = ? AND sent_at IS NULL",
+        (reminder_id, user_id),
+    )
 
 
 def _change(query, params):

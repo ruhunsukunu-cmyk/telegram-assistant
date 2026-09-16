@@ -19,7 +19,7 @@ class UiTests(unittest.TestCase):
                 "btn_tasks",
                 "btn_notes",
                 "btn_quick_add",
-                "btn_remind_help",
+                "btn_reminders",
                 "btn_help",
             },
         )

@@ -43,6 +43,18 @@ class DatabaseTests(unittest.TestCase):
         self.assertTrue(database.mark_reminder_sent(reminder_id))
         self.assertEqual(database.get_pending_reminders(), [])
 
+    def test_reminders_are_scoped_and_can_be_cancelled(self):
+        from datetime import datetime, timedelta, timezone
+
+        due_at = datetime.now(timezone.utc) + timedelta(minutes=10)
+        reminder_id = database.add_reminder(1, 99, "toplantı", due_at)
+        database.add_reminder(2, 100, "başka kullanıcı", due_at)
+
+        self.assertEqual(len(database.get_pending_reminders(1)), 1)
+        self.assertFalse(database.cancel_reminder(reminder_id, 2))
+        self.assertTrue(database.cancel_reminder(reminder_id, 1))
+        self.assertEqual(database.get_pending_reminders(1), [])
+
 
 if __name__ == "__main__":
     unittest.main()
