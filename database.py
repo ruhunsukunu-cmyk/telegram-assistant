@@ -89,6 +89,14 @@ def delete_task(task_id, user_id):
     return _change("DELETE FROM tasks WHERE id = ? AND user_id = ?", (task_id, user_id))
 
 
+def clear_completed_tasks(user_id):
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(_sql("DELETE FROM tasks WHERE user_id = ? AND is_done = 1"), (user_id,))
+        conn.commit()
+        return cursor.rowcount
+
+
 def add_reminder(user_id, chat_id, message, due_at: datetime):
     due_at = due_at.astimezone(timezone.utc).replace(tzinfo=None)
     due_value = due_at if _uses_postgres() else due_at.isoformat(sep=" ")

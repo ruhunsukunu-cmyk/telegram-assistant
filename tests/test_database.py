@@ -70,6 +70,17 @@ class DatabaseTests(unittest.TestCase):
         self.assertEqual(len(results), 2)
         self.assertEqual({item["type"] for item in results}, {"task", "note"})
 
+    def test_clear_completed_tasks_keeps_pending_and_other_users(self):
+        done_id = database.add_task(1, "Biten görev")
+        database.complete_task(done_id, 1)
+        database.add_task(1, "Bekleyen görev")
+        other_id = database.add_task(2, "Başkasının biten görevi")
+        database.complete_task(other_id, 2)
+
+        self.assertEqual(database.clear_completed_tasks(1), 1)
+        self.assertEqual([row["title"] for row in database.get_tasks(1)], ["Bekleyen görev"])
+        self.assertEqual(len(database.get_tasks(2)), 1)
+
 
 if __name__ == "__main__":
     unittest.main()

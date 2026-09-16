@@ -163,6 +163,8 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "❓ *Yardım merkezi*\n"
         "━━━━━━━━━━━━━━━━━━━━━\n"
         "`/hava Ankara` — hava durumu\n"
+        "`/sehir Ankara` — varsayılan şehri kaydet\n"
+        "`/bugun` — kişisel günlük özet\n"
         "`/piyasa` — döviz ve kripto\n"
         "`/gorev Kitap oku` — görev ekle\n"
         "`/gorevler` — görevleri görüntüle\n"
@@ -170,6 +172,8 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "`/notlar` — notları görüntüle\n"
         "`/hatirlat 15 Su iç` — hatırlatıcı kur\n"
         "`/hatirlaticilar` — bekleyen hatırlatıcılar\n"
+        "`/ara toplantı` — görev ve notlarda ara\n"
+        "`/temizle` — tamamlanan görevleri temizle\n"
         "`/menu` — ana paneli aç"
     )
     await show_panel(update, help_text, get_back_keyboard())
@@ -363,8 +367,28 @@ async def list_tasks_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
             keyboard.append([
                 InlineKeyboardButton(f"🗑️ {index}. görevi temizle", callback_data=f"ask_del_task_{t['id']}")
             ])
+    if any(t["is_done"] for t in tasks):
+        keyboard.append([
+            InlineKeyboardButton("🧹 Tamamlananları temizle", callback_data="ask_clear_completed")
+        ])
     keyboard.append([InlineKeyboardButton("‹ Ana menü", callback_data="btn_home")])
     await show_panel(update, msg, InlineKeyboardMarkup(keyboard))
+
+
+async def clear_completed_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    completed = sum(task["is_done"] for task in db.get_tasks(update.effective_user.id))
+    if not completed:
+        await update.message.reply_text("🧹 Temizlenecek tamamlanmış görev yok.")
+        return
+    keyboard = InlineKeyboardMarkup([[
+        InlineKeyboardButton("Evet, temizle", callback_data="confirm_clear_completed"),
+        InlineKeyboardButton("Vazgeç", callback_data="btn_tasks"),
+    ]])
+    await update.message.reply_text(
+        f"🧹 *{completed} tamamlanmış görev silinsin mi?*",
+        parse_mode="Markdown",
+        reply_markup=keyboard,
+    )
 
 
 # ─── HATIRLATICI (JOB QUEUE) ───
@@ -415,6 +439,7 @@ async def initialize_app(app):
     """Telegram komut menüsünü kur ve kalıcı hatırlatıcıları geri yükle."""
     await app.bot.set_my_commands([
         BotCommand("menu", "Ana paneli aç"),
+        BotCommand("bugun", "Kişisel günlük özetini göster"),
         BotCommand("gorev", "Yeni görev ekle"),
         BotCommand("gorevler", "Görevlerini görüntüle"),
         BotCommand("not", "Yeni not kaydet"),
@@ -422,7 +447,10 @@ async def initialize_app(app):
         BotCommand("hatirlat", "Dakika bazlı hatırlatıcı kur"),
         BotCommand("hatirlaticilar", "Bekleyen hatırlatıcılarını görüntüle"),
         BotCommand("hava", "Şehir hava durumunu göster"),
+        BotCommand("sehir", "Varsayılan şehrini değiştir"),
         BotCommand("piyasa", "Döviz ve kripto özetini göster"),
+        BotCommand("ara", "Görev ve notlarında ara"),
+        BotCommand("temizle", "Tamamlanan görevleri temizle"),
         BotCommand("help", "Yardım merkezini aç"),
     ])
     await restore_reminders(app)
@@ -620,6 +648,18 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         db.delete_task(task_id, user_id)
         await list_tasks_command(update, context)
 
+    elif data == "ask_clear_completed":
+        completed = sum(task["is_done"] for task in db.get_tasks(query.from_user.id))
+        keyboard = InlineKeyboardMarkup([[
+            InlineKeyboardButton("Evet, temizle", callback_data="confirm_clear_completed"),
+            InlineKeyboardButton("Vazgeç", callback_data="btn_tasks"),
+        ]])
+        await show_panel(update, f"🧹 *{completed} tamamlanmış görev silinsin mi?*", keyboard)
+
+    elif data == "confirm_clear_completed":
+        db.clear_completed_tasks(query.from_user.id)
+        await list_tasks_command(update, context)
+
     elif data.startswith("ask_del_note_"):
         note_id = int(data.replace("ask_del_note_", ""))
         keyboard = InlineKeyboardMarkup([[
@@ -770,6 +810,7 @@ def main():
     app.add_handler(CommandHandler("bugun", today_command))
     app.add_handler(CommandHandler("gorev", add_task_command))
     app.add_handler(CommandHandler("gorevler", list_tasks_command))
+    app.add_handler(CommandHandler("temizle", clear_completed_command))
     app.add_handler(CommandHandler("not", add_note_command))
     app.add_handler(CommandHandler("notlar", list_notes_command))
     app.add_handler(CommandHandler("hatirlat", remind_command))

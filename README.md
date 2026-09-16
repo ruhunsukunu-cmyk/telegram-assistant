@@ -53,6 +53,8 @@ Telegram'da kendi botunuza gidin ve **/start** yazarak asistanınızı kullanmay
 |---|---|---|
 | `/start` | Ana karşılama panelini ve interaktif butonları açar | `/start` |
 | `/hava <şehir>` | İstenen şehrin canlı hava durumunu getirir | `/hava ankara` |
+| `/sehir <şehir>` | Menüde kullanılacak varsayılan şehri kaydeder | `/sehir Ankara` |
+| `/bugun` | Hava, görev ve sıradaki hatırlatıcı özetini gösterir | `/bugun` |
 | `/piyasa` | Dolar, Euro, BTC, ETH güncel kurlarını listeler | `/piyasa` |
 | `/gorev <metin>` | Yapılacaklar listesine yeni görev ekler | `/gorev Almanca tekrarını yap` |
 | `/gorevler` | Aktif görevlerinizi butonlarla listeler | `/gorevler` |
@@ -60,4 +62,6 @@ Telegram'da kendi botunuza gidin ve **/start** yazarak asistanınızı kullanmay
 | `/notlar` | Kayıtlı notlarınızı listeler | `/notlar` |
 | `/hatirlat <dk> <mesaj>` | Belirtilen dakika sonra alarmlı bildirim atar | `/hatirlat 20 Fırını kapat` |
 | `/hatirlaticilar` | Bekleyen hatırlatıcıları listeler ve iptal ettirir | `/hatirlaticilar` |
+| `/ara <metin>` | Görev ve notlarda birlikte arama yapar | `/ara toplantı` |
+| `/temizle` | Tamamlanan görevleri onayla topluca siler | `/temizle` |
 | `/help` | Tüm komutları ve yardım rehberini gösterir | `/help` |
