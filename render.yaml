@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: telegram-assistant-bot
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python bot.py
+    envVars:
+      - key: DEFAULT_CITY
+        value: Istanbul
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
