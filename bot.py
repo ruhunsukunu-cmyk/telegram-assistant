@@ -16,6 +16,7 @@ load_dotenv()
 import threading
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from telegram import (
+    BotCommand,
     Update,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
@@ -66,24 +67,51 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
 DEFAULT_CITY = os.getenv("DEFAULT_CITY", "Istanbul")
 
+MAIN_MENU_TEXT = (
+    "✨ *Kişisel Asistan Paneli*\n"
+    "━━━━━━━━━━━━━━━━━━━━━\n"
+    "Bugün ne yapmak istersin?\n\n"
+    "🌤️ Güncel bilgi  •  📋 Planlama\n"
+    "📝 Notlar             •  ⏰ Hatırlatıcılar"
+)
+
 
 def get_main_keyboard():
     """Ana menü interaktif butonları"""
     keyboard = [
         [
-            InlineKeyboardButton("🌤️ Hava Durumu", callback_data="btn_weather"),
-            InlineKeyboardButton("💹 Finans & Kurlar", callback_data="btn_finance"),
+            InlineKeyboardButton("🌤️ Hava", callback_data="btn_weather"),
+            InlineKeyboardButton("💹 Piyasalar", callback_data="btn_finance"),
         ],
         [
-            InlineKeyboardButton("📋 Görevlerim", callback_data="btn_tasks"),
-            InlineKeyboardButton("📝 Notlarım", callback_data="btn_notes"),
+            InlineKeyboardButton("📋 Görevler", callback_data="btn_tasks"),
+            InlineKeyboardButton("📝 Notlar", callback_data="btn_notes"),
         ],
         [
-            InlineKeyboardButton("⏰ Hatırlatıcı Nasıl Kurulur?", callback_data="btn_remind_help"),
-            InlineKeyboardButton("❓ Yardım & Komutlar", callback_data="btn_help"),
+            InlineKeyboardButton("➕ Hızlı ekle", callback_data="btn_quick_add"),
+            InlineKeyboardButton("⏰ Hatırlatıcı", callback_data="btn_remind_help"),
+        ],
+        [
+            InlineKeyboardButton("❓ Yardım ve komutlar", callback_data="btn_help"),
         ]
     ]
     return InlineKeyboardMarkup(keyboard)
+
+
+def get_back_keyboard():
+    return InlineKeyboardMarkup([[InlineKeyboardButton("‹ Ana menü", callback_data="btn_home")]])
+
+
+async def show_panel(update, text, reply_markup=None, parse_mode="Markdown"):
+    """Komutlarda yeni mesaj, menü gezinmesinde aynı mesajı günceller."""
+    if update.callback_query:
+        await update.callback_query.edit_message_text(
+            text=text, parse_mode=parse_mode, reply_markup=reply_markup
+        )
+    else:
+        await update.message.reply_text(
+            text=text, parse_mode=parse_mode, reply_markup=reply_markup
+        )
 
 
 # ─────────────────────────────────────────
@@ -94,12 +122,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     name = user.first_name if user else "Dostum"
 
-    welcome_text = (
-        f"👋 Merhaba *{escape_markdown(name)}*! Ben senin kişisel *Telegram Asistanınım*.\n\n"
-        f"Günlük işlerinde, hatırlatmalarında, notlarında ve piyasa/hava takibinde "
-        f"sana yardımcı olmak için 7/24 buradayım.\n\n"
-        f"Aşağıdaki butonları kullanarak hızlıca işlem yapabilirsin 👇"
-    )
+    welcome_text = f"👋 Merhaba *{escape_markdown(name)}*!\n\n{MAIN_MENU_TEXT}"
     await update.message.reply_text(
         welcome_text,
         parse_mode="Markdown",
@@ -107,43 +130,42 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+async def menu_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await show_panel(update, MAIN_MENU_TEXT, get_main_keyboard())
+
+
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """/help komutu: Tüm komutların detaylı kullanım kılavuzu."""
     help_text = (
-        "🤖 *Kişisel Asistan Komut Listesi:*\n"
+        "❓ *Yardım merkezi*\n"
         "━━━━━━━━━━━━━━━━━━━━━\n"
-        "🌤️ *Hava Durumu:* `/hava <şehir>` (Örn: `/hava ankara`)\n"
-        "💹 *Piyasa / Kurlar:* `/piyasa` (Dolar, Euro, BTC, ETH)\n"
-        "📋 *Görev Ekle:* `/gorev <yapılacak iş>` (Örn: `/gorev Almanca çalış`)\n"
-        "📋 *Görevleri Gör:* `/gorevler`\n"
-        "📝 *Hızlı Not Al:* `/not <not içeriği>`\n"
-        "📝 *Notları Gör:* `/notlar`\n"
-        "⏰ *Hatırlatıcı Kur:* `/hatirlat <dakika> <mesaj>`\n"
-        "   └ *Örnek:* `/hatirlat 15 Çayı ocaktan al`\n"
-        "━━━━━━━━━━━━━━━━━━━━━\n"
-        "💡 *İpucu:* Menü butonlarını kullanarak da tek tıkla işlem yapabilirsin!"
+        "`/hava Ankara` — hava durumu\n"
+        "`/piyasa` — döviz ve kripto\n"
+        "`/gorev Kitap oku` — görev ekle\n"
+        "`/gorevler` — görevleri görüntüle\n"
+        "`/not Fikir metni` — not kaydet\n"
+        "`/notlar` — notları görüntüle\n"
+        "`/hatirlat 15 Su iç` — hatırlatıcı kur\n"
+        "`/menu` — ana paneli aç"
     )
-    if update.message:
-        await update.message.reply_text(help_text, parse_mode="Markdown")
-    elif update.callback_query:
-        await update.callback_query.message.reply_text(help_text, parse_mode="Markdown")
+    await show_panel(update, help_text, get_back_keyboard())
 
 
 # ─── HAVA DURUMU ───
 async def weather_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """/hava <şehir> komutu"""
     city = " ".join(context.args).strip() if context.args else DEFAULT_CITY
-    await update.message.reply_text("⏳ Hava durumu alınıyor...")
+    progress = await update.message.reply_text("🌤️ Hava durumu hazırlanıyor…")
     result = await get_weather(city)
-    await update.message.reply_text(result, parse_mode="Markdown")
+    await progress.edit_text(result, parse_mode="Markdown", reply_markup=get_back_keyboard())
 
 
 # ─── FİNANS & KURLAR ───
 async def finance_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """/piyasa komutu"""
-    await update.message.reply_text("⏳ Piyasa kurları çekiliyor...")
+    progress = await update.message.reply_text("💹 Piyasa özeti hazırlanıyor…")
     result = await get_market_rates()
-    await update.message.reply_text(result, parse_mode="Markdown")
+    await progress.edit_text(result, parse_mode="Markdown", reply_markup=get_back_keyboard())
 
 
 # ─── NOT YÖNETİMİ ───
@@ -160,8 +182,12 @@ async def add_note_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     note_id = db.add_note(user_id, content)
     await update.message.reply_text(
-        f"✅ Not kaydedildi (ID: `{note_id}`):\n\n_{escape_markdown(content)}_",
-        parse_mode="Markdown"
+        f"✅ *Not kaydedildi*\n\n{escape_markdown(content)}",
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup([[
+            InlineKeyboardButton("📝 Notlarımı aç", callback_data="btn_notes"),
+            InlineKeyboardButton("⌂ Menü", callback_data="btn_home"),
+        ]]),
     )
 
 
@@ -171,27 +197,20 @@ async def list_notes_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
     notes = db.get_notes(user_id)
 
     if not notes:
-        text = "📝 Henüz kaydedilmiş bir notunuz yok.\nEklemek için: `/not <metin>`"
-        if update.message:
-            await update.message.reply_text(text, parse_mode="Markdown")
-        elif update.callback_query:
-            await update.callback_query.message.reply_text(text, parse_mode="Markdown")
+        text = "📝 *Notların*\n━━━━━━━━━━━━━━━━━━━━━\nHenüz notun yok.\n\nEklemek için: `/not <metin>`"
+        await show_panel(update, text, get_back_keyboard())
         return
 
-    msg = "📝 *Kaydedilen Notlarınız:*\n━━━━━━━━━━━━━━━━━━━━━\n"
+    msg = f"📝 *Notların*  ·  _{len(notes)} kayıt_\n━━━━━━━━━━━━━━━━━━━━━\n"
     keyboard = []
-    for n in notes[:10]:  # Son 10 not
+    for index, n in enumerate(notes[:10], 1):
         dt = str(n["created_at"]).split()[0] if n["created_at"] else ""
-        msg += f"• `{escape_markdown(n['content'])}` _({dt})_\n"
+        msg += f"\n*{index}.* {escape_markdown(n['content'])}\n   _{dt}_\n"
         keyboard.append([
-            InlineKeyboardButton(f"🗑️ Sil: {n['content'][:20]}...", callback_data=f"del_note_{n['id']}")
+            InlineKeyboardButton(f"🗑️ {index}. notu sil", callback_data=f"ask_del_note_{n['id']}")
         ])
-
-    reply_markup = InlineKeyboardMarkup(keyboard) if keyboard else None
-    if update.message:
-        await update.message.reply_text(msg, parse_mode="Markdown", reply_markup=reply_markup)
-    elif update.callback_query:
-        await update.callback_query.message.reply_text(msg, parse_mode="Markdown", reply_markup=reply_markup)
+    keyboard.append([InlineKeyboardButton("‹ Ana menü", callback_data="btn_home")])
+    await show_panel(update, msg, InlineKeyboardMarkup(keyboard))
 
 
 # ─── GÖREV YÖNETİMİ (TODO) ───
@@ -208,8 +227,12 @@ async def add_task_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     task_id = db.add_task(user_id, title)
     await update.message.reply_text(
-        f"📋 Görev listene eklendi (ID: `{task_id}`):\n\n_{escape_markdown(title)}_",
-        parse_mode="Markdown"
+        f"✅ *Görev eklendi*\n\n{escape_markdown(title)}",
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup([[
+            InlineKeyboardButton("📋 Görevlerimi aç", callback_data="btn_tasks"),
+            InlineKeyboardButton("⌂ Menü", callback_data="btn_home"),
+        ]]),
     )
 
 
@@ -219,34 +242,28 @@ async def list_tasks_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
     tasks = db.get_tasks(user_id)
 
     if not tasks:
-        text = "🎉 Harika! Bekleyen hiçbir göreviniz yok.\nYeni görev için: `/gorev <iş>`"
-        if update.message:
-            await update.message.reply_text(text, parse_mode="Markdown")
-        elif update.callback_query:
-            await update.callback_query.message.reply_text(text, parse_mode="Markdown")
+        text = "📋 *Görevlerin*\n━━━━━━━━━━━━━━━━━━━━━\n🎉 Bekleyen görevin yok.\n\nEklemek için: `/gorev <iş>`"
+        await show_panel(update, text, get_back_keyboard())
         return
 
-    msg = "📋 *Görev Listeniz:*\n━━━━━━━━━━━━━━━━━━━━━\n"
+    pending_count = sum(not t["is_done"] for t in tasks)
+    msg = f"📋 *Görevlerin*  ·  _{pending_count} bekliyor_\n━━━━━━━━━━━━━━━━━━━━━\n"
     keyboard = []
-    for t in tasks:
+    for index, t in enumerate(tasks[:15], 1):
         status_emoji = "✅" if t["is_done"] else "⬜"
-        msg += f"{status_emoji} *{escape_markdown(t['title'])}*\n"
+        msg += f"\n{status_emoji} *{index}.* {escape_markdown(t['title'])}\n"
 
         if not t["is_done"]:
             keyboard.append([
-                InlineKeyboardButton(f"✅ Tamamla: {t['title'][:18]}", callback_data=f"done_task_{t['id']}"),
-                InlineKeyboardButton("🗑️ Sil", callback_data=f"del_task_{t['id']}")
+                InlineKeyboardButton(f"✅ {index}. Tamamla", callback_data=f"done_task_{t['id']}"),
+                InlineKeyboardButton("🗑️ Sil", callback_data=f"ask_del_task_{t['id']}")
             ])
         else:
             keyboard.append([
-                InlineKeyboardButton(f"🗑️ Temizle: {t['title'][:20]}", callback_data=f"del_task_{t['id']}")
+                InlineKeyboardButton(f"🗑️ {index}. görevi temizle", callback_data=f"ask_del_task_{t['id']}")
             ])
-
-    reply_markup = InlineKeyboardMarkup(keyboard) if keyboard else None
-    if update.message:
-        await update.message.reply_text(msg, parse_mode="Markdown", reply_markup=reply_markup)
-    elif update.callback_query:
-        await update.callback_query.message.reply_text(msg, parse_mode="Markdown", reply_markup=reply_markup)
+    keyboard.append([InlineKeyboardButton("‹ Ana menü", callback_data="btn_home")])
+    await show_panel(update, msg, InlineKeyboardMarkup(keyboard))
 
 
 # ─── HATIRLATICI (JOB QUEUE) ───
@@ -293,6 +310,22 @@ async def restore_reminders(app):
         logger.info("%s bekleyen hatırlatıcı yeniden yüklendi.", restored)
 
 
+async def initialize_app(app):
+    """Telegram komut menüsünü kur ve kalıcı hatırlatıcıları geri yükle."""
+    await app.bot.set_my_commands([
+        BotCommand("menu", "Ana paneli aç"),
+        BotCommand("gorev", "Yeni görev ekle"),
+        BotCommand("gorevler", "Görevlerini görüntüle"),
+        BotCommand("not", "Yeni not kaydet"),
+        BotCommand("notlar", "Notlarını görüntüle"),
+        BotCommand("hatirlat", "Dakika bazlı hatırlatıcı kur"),
+        BotCommand("hava", "Şehir hava durumunu göster"),
+        BotCommand("piyasa", "Döviz ve kripto özetini göster"),
+        BotCommand("help", "Yardım merkezini aç"),
+    ])
+    await restore_reminders(app)
+
+
 async def remind_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """/hatirlat <dakika> <mesaj>"""
     if len(context.args) < 2:
@@ -329,9 +362,10 @@ async def remind_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
     await update.message.reply_text(
-        f"⏳ Anlaşıldı! *{minutes} dakika* sonra sana şunu hatırlatacağım:\n\n"
-        f"🔔 _{escape_markdown(remind_text)}_",
-        parse_mode="Markdown"
+        f"⏰ *Hatırlatıcı kuruldu*\n\n"
+        f"*{minutes:g} dakika sonra:* {escape_markdown(remind_text)}",
+        parse_mode="Markdown",
+        reply_markup=get_main_keyboard(),
     )
 
 
@@ -343,15 +377,18 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     data = query.data
 
-    if data == "btn_weather":
-        await query.message.reply_text("⏳ Hava durumu alınıyor...")
+    if data == "btn_home":
+        await show_panel(update, MAIN_MENU_TEXT, get_main_keyboard())
+
+    elif data == "btn_weather":
+        await query.edit_message_text("🌤️ Hava durumu hazırlanıyor…")
         res = await get_weather(DEFAULT_CITY)
-        await query.message.reply_text(res, parse_mode="Markdown")
+        await query.edit_message_text(res, parse_mode="Markdown", reply_markup=get_back_keyboard())
 
     elif data == "btn_finance":
-        await query.message.reply_text("⏳ Piyasa kurları çekiliyor...")
+        await query.edit_message_text("💹 Piyasa özeti hazırlanıyor…")
         res = await get_market_rates()
-        await query.message.reply_text(res, parse_mode="Markdown")
+        await query.edit_message_text(res, parse_mode="Markdown", reply_markup=get_back_keyboard())
 
     elif data == "btn_tasks":
         await list_tasks_command(update, context)
@@ -360,15 +397,27 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await list_notes_command(update, context)
 
     elif data == "btn_remind_help":
-        await query.message.reply_text(
-            "⏰ *Hatırlatıcı Nasıl Kurulur?*\n\n"
-            "Mesaj alanına şu komutu yazıp göndermen yeterli:\n"
-            "`/hatirlat <dakika> <hatırlatılacak şey>`\n\n"
-            "*Örnekler:*\n"
-            "• `/hatirlat 5 Fırını kapat`\n"
-            "• `/hatirlat 30 Toplantıya katıl`\n"
-            "• `/hatirlat 60 Mola ver su iç`",
-            parse_mode="Markdown"
+        await show_panel(
+            update,
+            "⏰ *Hatırlatıcı oluştur*\n━━━━━━━━━━━━━━━━━━━━━\n"
+            "Şu kalıbı kullan:\n`/hatirlat <dakika> <mesaj>`\n\n"
+            "*Örnekler*\n`/hatirlat 5 Fırını kapat`\n"
+            "`/hatirlat 30 Toplantıya katıl`\n`/hatirlat 60 Su iç`",
+            get_back_keyboard(),
+        )
+
+    elif data == "btn_quick_add":
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("📋 Görevlerime git", callback_data="btn_tasks")],
+            [InlineKeyboardButton("📝 Notlarıma git", callback_data="btn_notes")],
+            [InlineKeyboardButton("‹ Ana menü", callback_data="btn_home")],
+        ])
+        await show_panel(
+            update,
+            "➕ *Hızlı ekle*\n━━━━━━━━━━━━━━━━━━━━━\n"
+            "📋 `/gorev Spor yap`\n📝 `/not Yeni fikir`\n"
+            "⏰ `/hatirlat 20 Mola ver`",
+            keyboard,
         )
 
     elif data == "btn_help":
@@ -378,19 +427,35 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         task_id = int(data.replace("done_task_", ""))
         user_id = query.from_user.id
         db.complete_task(task_id, user_id)
-        await query.message.reply_text(f"🎉 Görev tamamlandı olarak işaretlendi!")
+        await list_tasks_command(update, context)
 
-    elif data.startswith("del_task_"):
-        task_id = int(data.replace("del_task_", ""))
+    elif data.startswith("ask_del_task_"):
+        task_id = int(data.replace("ask_del_task_", ""))
+        keyboard = InlineKeyboardMarkup([[
+            InlineKeyboardButton("Evet, sil", callback_data=f"confirm_del_task_{task_id}"),
+            InlineKeyboardButton("Vazgeç", callback_data="btn_tasks"),
+        ]])
+        await show_panel(update, "🗑️ *Bu görevi silmek istediğine emin misin?*", keyboard)
+
+    elif data.startswith("confirm_del_task_"):
+        task_id = int(data.replace("confirm_del_task_", ""))
         user_id = query.from_user.id
         db.delete_task(task_id, user_id)
-        await query.message.reply_text(f"🗑️ Görev silindi.")
+        await list_tasks_command(update, context)
 
-    elif data.startswith("del_note_"):
-        note_id = int(data.replace("del_note_", ""))
+    elif data.startswith("ask_del_note_"):
+        note_id = int(data.replace("ask_del_note_", ""))
+        keyboard = InlineKeyboardMarkup([[
+            InlineKeyboardButton("Evet, sil", callback_data=f"confirm_del_note_{note_id}"),
+            InlineKeyboardButton("Vazgeç", callback_data="btn_notes"),
+        ]])
+        await show_panel(update, "🗑️ *Bu notu silmek istediğine emin misin?*", keyboard)
+
+    elif data.startswith("confirm_del_note_"):
+        note_id = int(data.replace("confirm_del_note_", ""))
         user_id = query.from_user.id
         db.delete_note(note_id, user_id)
-        await query.message.reply_text(f"🗑️ Not silindi.")
+        await list_notes_command(update, context)
 
 
 # ─── SERBEST METİN YANITLAYICI ───
@@ -406,6 +471,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await list_tasks_command(update, context)
     elif text in ["not", "notlar", "notlarım"]:
         await list_notes_command(update, context)
+    elif text in ["menü", "menu", "ana menü", "ana menu"]:
+        await menu_command(update, context)
     elif text in ["yardım", "help", "komutlar", "neler yapabilirsin"]:
         await help_command(update, context)
     else:
@@ -446,10 +513,11 @@ def main():
             logger.warning(f"Sağlık sunucusu başlatılamadı: {e}")
 
     print("🚀 Telegram Asistan Botu başlatılıyor...")
-    app = ApplicationBuilder().token(TOKEN).post_init(restore_reminders).build()
+    app = ApplicationBuilder().token(TOKEN).post_init(initialize_app).build()
 
     # Komut yöneticileri
     app.add_handler(CommandHandler("start", start_command))
+    app.add_handler(CommandHandler("menu", menu_command))
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("hava", weather_command))
     app.add_handler(CommandHandler("piyasa", finance_command))
