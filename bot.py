@@ -1261,6 +1261,10 @@ async def access_guard(update: Update, context: ContextTypes.DEFAULT_TYPE):
 def main():
     # Veritabanını hazırla
     db.init_db()
+    source_database_url = os.getenv("SOURCE_DATABASE_URL", "").strip()
+    if source_database_url:
+        copied = db.migrate_postgres_to_sqlite(source_database_url)
+        logger.info("PostgreSQL -> SQLite veri geçişi tamamlandı: %s satır", copied)
 
     if not TOKEN or TOKEN == "BURAYA_BOT_TOKENINI_YAPISTIR":
         print("\n" + "=" * 60)

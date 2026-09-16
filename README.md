@@ -55,6 +55,8 @@ TIMEZONE=Europe/Istanbul
 
 `DATABASE_URL` ve `DB_PATH` birlikte tanımlanırsa PostgreSQL kullanılır. Kalıcı Volume
 ile düşük trafikli kişisel kullanımda yalnızca `DB_PATH` tanımlamak daha ekonomiktir.
+Render PostgreSQL'den ilk geçişte eski verileri bir kez kopyalamak için geçici olarak
+`SOURCE_DATABASE_URL` tanımlanabilir. Başarılı geçişten sonra bu değişken kaldırılmalıdır.
 
 ### 3. Botu Çalıştırın
 - **En Kolay Yol:** Proje klasöründeki `start.bat` dosyasına çift tıklayın!

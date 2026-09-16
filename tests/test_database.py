@@ -1,6 +1,8 @@
 import os
 import tempfile
 import unittest
+from datetime import datetime
+from decimal import Decimal
 from unittest.mock import patch
 
 import database
@@ -33,6 +35,13 @@ class DatabaseTests(unittest.TestCase):
     def test_storage_label_distinguishes_persistent_sqlite(self):
         with patch.dict(os.environ, {"DB_PATH": "/data/assistant.db"}):
             self.assertEqual(database.storage_label(), "kalıcı SQLite")
+
+    def test_postgres_values_are_converted_for_sqlite(self):
+        self.assertEqual(database._sqlite_value(Decimal("12.50")), "12.50")
+        self.assertEqual(
+            database._sqlite_value(datetime(2026, 9, 17, 12, 30)),
+            "2026-09-17 12:30:00",
+        )
 
     def test_task_lifecycle_and_owner_check(self):
         task_id = database.add_task(1, "testleri çalıştır")

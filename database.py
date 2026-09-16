@@ -1,12 +1,19 @@
 import os
 import sqlite3
 from contextlib import contextmanager
+from decimal import Decimal
 from datetime import datetime, timezone
 
 DB_PATH = os.getenv(
     "DB_PATH", os.path.join(os.path.dirname(__file__), "assistant.db")
 ).strip()
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
+
+MIGRATION_TABLES = (
+    "notes", "tasks", "reminders", "user_settings", "task_metadata",
+    "reminder_rules", "habits", "habit_logs", "expenses", "calendar_events",
+    "user_preferences", "daily_summaries", "budgets",
+)
 
 
 def _uses_postgres():
@@ -72,7 +79,56 @@ def init_db():
         cursor.execute("CREATE TABLE IF NOT EXISTS user_preferences (user_id BIGINT PRIMARY KEY, timezone TEXT NOT NULL DEFAULT 'Europe/Istanbul', summary_time TEXT NULL)")
         cursor.execute("CREATE TABLE IF NOT EXISTS daily_summaries (user_id BIGINT PRIMARY KEY, chat_id BIGINT NOT NULL, send_time TEXT NOT NULL, timezone TEXT NOT NULL DEFAULT 'Europe/Istanbul')")
         cursor.execute("CREATE TABLE IF NOT EXISTS budgets (user_id BIGINT PRIMARY KEY, monthly_limit NUMERIC NOT NULL, currency TEXT NOT NULL DEFAULT 'TRY')")
+        cursor.execute("CREATE TABLE IF NOT EXISTS app_metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
         conn.commit()
+
+
+def migrate_postgres_to_sqlite(source_url):
+    """Render PostgreSQL verilerini boş Railway Volume'a bir kez kopyala."""
+    source_url = source_url.strip()
+    if not source_url or _uses_postgres():
+        return 0
+
+    with get_db() as target:
+        marker = target.execute(
+            "SELECT value FROM app_metadata WHERE key = ?", ("postgres_migration_v1",)
+        ).fetchone()
+        if marker:
+            return 0
+
+        from psycopg import connect
+        from psycopg.rows import dict_row
+
+        copied = 0
+        with connect(source_url, row_factory=dict_row) as source:
+            for table in MIGRATION_TABLES:
+                rows = source.execute(f'SELECT * FROM "{table}"').fetchall()
+                for row in rows:
+                    columns = tuple(row.keys())
+                    placeholders = ", ".join("?" for _ in columns)
+                    names = ", ".join(f'"{name}"' for name in columns)
+                    values = tuple(_sqlite_value(row[name]) for name in columns)
+                    target.execute(
+                        f'INSERT OR IGNORE INTO "{table}" ({names}) VALUES ({placeholders})',
+                        values,
+                    )
+                    copied += 1
+        target.execute(
+            "INSERT INTO app_metadata (key, value) VALUES (?, CURRENT_TIMESTAMP)",
+            ("postgres_migration_v1",),
+        )
+        target.commit()
+        return copied
+
+
+def _sqlite_value(value):
+    if isinstance(value, Decimal):
+        return str(value)
+    if isinstance(value, datetime):
+        return value.isoformat(sep=" ")
+    if hasattr(value, "isoformat"):
+        return value.isoformat()
+    return value
 
 
 def add_note(user_id, content):
