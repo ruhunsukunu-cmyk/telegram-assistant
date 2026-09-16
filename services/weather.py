@@ -23,6 +23,53 @@ WEATHER_CODES = {
     95: ("Gök Gürültülü Fırtına", "⚡⛈️"),
 }
 
+MET_CONDITIONS = {
+    "clearsky": ("Açık / Güneşli", "☀️"),
+    "fair": ("Çoğunlukla Açık", "🌤️"),
+    "partlycloudy": ("Parçalı Bulutlu", "⛅"),
+    "cloudy": ("Bulutlu", "☁️"),
+    "fog": ("Sisli", "🌫️"),
+    "heavyrain": ("Kuvvetli Yağmur", "🌧️"),
+    "lightrain": ("Hafif Yağmur", "🌦️"),
+    "rain": ("Yağmurlu", "🌧️"),
+    "heavysnow": ("Yoğun Kar Yağışı", "❄️"),
+    "lightsnow": ("Hafif Kar Yağışı", "🌨️"),
+    "snow": ("Kar Yağışlı", "❄️"),
+}
+
+
+def _met_condition(symbol_code):
+    base_code = (symbol_code or "").split("_")[0]
+    for key, value in MET_CONDITIONS.items():
+        if key in base_code:
+            return value
+    return ("Normal", "🌡️")
+
+
+async def _get_met_weather(client, lat, lon):
+    """Open-Meteo kotalandığında MET Norway verisini kullan."""
+    response = await client.get(
+        "https://api.met.no/weatherapi/locationforecast/2.0/compact",
+        params={"lat": round(lat, 4), "lon": round(lon, 4)},
+        headers={"User-Agent": "telegram-assistant-bot/1.0 github.com/ruhunsukunu-cmyk/telegram-assistant"},
+    )
+    response.raise_for_status()
+    timeseries = response.json().get("properties", {}).get("timeseries", [])
+    if not timeseries:
+        raise ValueError("Yedek hava durumu servisi boş yanıt verdi")
+
+    entry = timeseries[0]["data"]
+    details = entry["instant"]["details"]
+    next_hour = entry.get("next_1_hours", {}).get("summary", {})
+    condition, emoji = _met_condition(next_hour.get("symbol_code"))
+    return {
+        "temperature": details.get("air_temperature", "--"),
+        "humidity": details.get("relative_humidity", "--"),
+        "wind": details.get("wind_speed", "--"),
+        "condition": condition,
+        "emoji": emoji,
+    }
+
 
 async def get_weather(city_name: str = "Istanbul") -> str:
     """Open-Meteo API ile ücretsiz, anahtarsız hava durumu çeker."""
@@ -56,16 +103,22 @@ async def get_weather(city_name: str = "Istanbul") -> str:
                     "current": "temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m",
                 },
             )
-            weather_res.raise_for_status()
-            weather_data = weather_res.json()
-
-            current = weather_data.get("current", {})
-            temp = current.get("temperature_2m", "--")
-            humidity = current.get("relative_humidity_2m", "--")
-            wind = current.get("wind_speed_10m", "--")
-            w_code = current.get("weather_code", 0)
-
-            condition, emoji = WEATHER_CODES.get(w_code, ("Normal", "🌡️"))
+            if weather_res.status_code == 429:
+                current = await _get_met_weather(client, lat, lon)
+                temp = current["temperature"]
+                humidity = current["humidity"]
+                wind = current["wind"]
+                condition = current["condition"]
+                emoji = current["emoji"]
+            else:
+                weather_res.raise_for_status()
+                weather_data = weather_res.json()
+                current = weather_data.get("current", {})
+                temp = current.get("temperature_2m", "--")
+                humidity = current.get("relative_humidity_2m", "--")
+                wind = current.get("wind_speed_10m", "--")
+                w_code = current.get("weather_code", 0)
+                condition, emoji = WEATHER_CODES.get(w_code, ("Normal", "🌡️"))
 
             return (
                 f"📍 *{resolved_city}, {country}* {emoji}\n"
@@ -75,5 +128,5 @@ async def get_weather(city_name: str = "Istanbul") -> str:
                 f"💧 *Nem:* `%{humidity}`\n"
                 f"💨 *Rüzgar:* `{wind} km/h`"
             )
-    except Exception as e:
-        return f"⚠️ Hava durumu bilgisi alınırken bir hata oluştu: {str(e)}"
+    except Exception:
+        return "⚠️ Hava durumu servisleri şu anda yoğun. Lütfen kısa bir süre sonra tekrar deneyin."
