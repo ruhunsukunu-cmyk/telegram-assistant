@@ -90,6 +90,27 @@ def get_back_keyboard():
     return InlineKeyboardMarkup([[InlineKeyboardButton("‹ Ana menü", callback_data="btn_home")]])
 
 
+def get_cancel_keyboard():
+    return InlineKeyboardMarkup([[
+        InlineKeyboardButton("Vazgeç", callback_data="cancel_input"),
+    ]])
+
+
+def parse_quick_reminder(text):
+    """'15 Su iç' biçimindeki hızlı hatırlatıcı girişini doğrula."""
+    parts = text.strip().split(maxsplit=1)
+    if len(parts) != 2:
+        return None
+    try:
+        minutes = float(parts[0].replace(",", "."))
+    except ValueError:
+        return None
+    message = parts[1].strip()
+    if not 0 < minutes <= 525_600 or not message:
+        return None
+    return minutes, message
+
+
 def get_webhook_config(token=TOKEN, base_url=WEBHOOK_BASE_URL):
     """Tokenı URL'ye koymadan güvenli webhook adresi ve doğrulama anahtarı üret."""
     if not base_url:
@@ -329,6 +350,20 @@ async def initialize_app(app):
     await restore_reminders(app)
 
 
+def schedule_reminder(context, user_id, chat_id, minutes, message):
+    seconds = max(1, int(minutes * 60))
+    due_at = datetime.now(timezone.utc) + timedelta(seconds=seconds)
+    reminder_id = db.add_reminder(user_id, chat_id, message, due_at)
+    context.job_queue.run_once(
+        reminder_callback,
+        when=seconds,
+        chat_id=chat_id,
+        data={"id": reminder_id, "message": message},
+        name=f"reminder-{reminder_id}",
+    )
+    return reminder_id
+
+
 async def remind_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """/hatirlat <dakika> <mesaj>"""
     if len(context.args) < 2:
@@ -350,19 +385,9 @@ async def remind_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     remind_text = " ".join(context.args[1:])
-    seconds = int(minutes * 60)
     chat_id = update.effective_chat.id
     user_id = update.effective_user.id
-    due_at = datetime.now(timezone.utc) + timedelta(seconds=seconds)
-    reminder_id = db.add_reminder(user_id, chat_id, remind_text, due_at)
-
-    context.job_queue.run_once(
-        reminder_callback,
-        when=seconds,
-        chat_id=chat_id,
-        data={"id": reminder_id, "message": remind_text},
-        name=f"reminder-{reminder_id}",
-    )
+    schedule_reminder(context, user_id, chat_id, minutes, remind_text)
 
     await update.message.reply_text(
         f"⏰ *Hatırlatıcı kuruldu*\n\n"
@@ -420,7 +445,12 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = query.data
 
     if data == "btn_home":
+        context.user_data.pop("pending_action", None)
         await show_panel(update, MAIN_MENU_TEXT, get_main_keyboard())
+
+    elif data == "cancel_input":
+        context.user_data.pop("pending_action", None)
+        await show_panel(update, "İşlem iptal edildi.\n\n" + MAIN_MENU_TEXT, get_main_keyboard())
 
     elif data == "btn_weather":
         await query.edit_message_text("🌤️ Hava durumu hazırlanıyor…")
@@ -442,27 +472,45 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await list_reminders_command(update, context)
 
     elif data == "btn_remind_help":
+        context.user_data["pending_action"] = "reminder"
         await show_panel(
             update,
             "⏰ *Hatırlatıcı oluştur*\n━━━━━━━━━━━━━━━━━━━━━\n"
-            "Şu kalıbı kullan:\n`/hatirlat <dakika> <mesaj>`\n\n"
-            "*Örnekler*\n`/hatirlat 5 Fırını kapat`\n"
-            "`/hatirlat 30 Toplantıya katıl`\n`/hatirlat 60 Su iç`",
-            get_back_keyboard(),
+            "Kaç dakika sonra ve neyi hatırlatayım?\n\n"
+            "Örnek: `20 Mola ver`",
+            get_cancel_keyboard(),
         )
 
     elif data == "btn_quick_add":
         keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("📋 Görevlerime git", callback_data="btn_tasks")],
-            [InlineKeyboardButton("📝 Notlarıma git", callback_data="btn_notes")],
+            [InlineKeyboardButton("📋 Görev ekle", callback_data="quick_task")],
+            [InlineKeyboardButton("📝 Not ekle", callback_data="quick_note")],
+            [InlineKeyboardButton("⏰ Hatırlatıcı kur", callback_data="btn_remind_help")],
             [InlineKeyboardButton("‹ Ana menü", callback_data="btn_home")],
         ])
         await show_panel(
             update,
             "➕ *Hızlı ekle*\n━━━━━━━━━━━━━━━━━━━━━\n"
-            "📋 `/gorev Spor yap`\n📝 `/not Yeni fikir`\n"
-            "⏰ `/hatirlat 20 Mola ver`",
+            "Eklemek istediğin kayıt türünü seç.",
             keyboard,
+        )
+
+    elif data == "quick_task":
+        context.user_data["pending_action"] = "task"
+        await show_panel(
+            update,
+            "📋 *Yeni görev*\n━━━━━━━━━━━━━━━━━━━━━\n"
+            "Görevini bir sonraki mesajda yaz.",
+            get_cancel_keyboard(),
+        )
+
+    elif data == "quick_note":
+        context.user_data["pending_action"] = "note"
+        await show_panel(
+            update,
+            "📝 *Yeni not*\n━━━━━━━━━━━━━━━━━━━━━\n"
+            "Notunu bir sonraki mesajda yaz.",
+            get_cancel_keyboard(),
         )
 
     elif data == "btn_help":
@@ -522,7 +570,66 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ─── SERBEST METİN YANITLAYICI ───
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Kullanıcı buton veya slash komut yerine direkt metin yazarsa akıllı yanıt verir."""
-    text = (update.message.text or "").strip().lower()
+    raw_text = (update.message.text or "").strip()
+    text = raw_text.lower()
+    pending_action = context.user_data.get("pending_action")
+
+    if pending_action and text in {"iptal", "vazgeç", "vazgec", "cancel"}:
+        context.user_data.pop("pending_action", None)
+        await update.message.reply_text("İşlem iptal edildi.", reply_markup=get_main_keyboard())
+        return
+
+    if pending_action == "task":
+        context.user_data.pop("pending_action", None)
+        db.add_task(update.effective_user.id, raw_text[:500])
+        await update.message.reply_text(
+            f"✅ *Görev eklendi*\n\n{escape_markdown(raw_text[:500])}",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton("📋 Görevlerimi aç", callback_data="btn_tasks"),
+                InlineKeyboardButton("⌂ Menü", callback_data="btn_home"),
+            ]]),
+        )
+        return
+
+    if pending_action == "note":
+        context.user_data.pop("pending_action", None)
+        db.add_note(update.effective_user.id, raw_text[:2000])
+        await update.message.reply_text(
+            f"✅ *Not kaydedildi*\n\n{escape_markdown(raw_text[:2000])}",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton("📝 Notlarımı aç", callback_data="btn_notes"),
+                InlineKeyboardButton("⌂ Menü", callback_data="btn_home"),
+            ]]),
+        )
+        return
+
+    if pending_action == "reminder":
+        parsed = parse_quick_reminder(raw_text)
+        if not parsed:
+            await update.message.reply_text(
+                "Bu formatı anlayamadım. Örneğin `20 Mola ver` yazabilirsin.",
+                parse_mode="Markdown",
+                reply_markup=get_cancel_keyboard(),
+            )
+            return
+        context.user_data.pop("pending_action", None)
+        minutes, reminder_text = parsed
+        schedule_reminder(
+            context,
+            update.effective_user.id,
+            update.effective_chat.id,
+            minutes,
+            reminder_text,
+        )
+        await update.message.reply_text(
+            f"⏰ *Hatırlatıcı kuruldu*\n\n"
+            f"*{minutes:g} dakika sonra:* {escape_markdown(reminder_text)}",
+            parse_mode="Markdown",
+            reply_markup=get_main_keyboard(),
+        )
+        return
 
     if any(w in text for w in ["hava", "hava durumu", "hava nasıl"]):
         await weather_command(update, context)

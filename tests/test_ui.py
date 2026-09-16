@@ -43,6 +43,19 @@ class UiTests(unittest.TestCase):
     def test_local_mode_has_no_webhook(self):
         self.assertIsNone(bot.get_webhook_config("token", ""))
 
+    def test_quick_reminder_parser(self):
+        self.assertEqual(bot.parse_quick_reminder("15 Su iç"), (15.0, "Su iç"))
+        self.assertEqual(bot.parse_quick_reminder("2,5 Çayı kontrol et"), (2.5, "Çayı kontrol et"))
+        self.assertIsNone(bot.parse_quick_reminder("yarın Su iç"))
+        self.assertIsNone(bot.parse_quick_reminder("0 Su iç"))
+        self.assertIsNone(bot.parse_quick_reminder("15"))
+
+    def test_cancel_button_is_available_for_input_mode(self):
+        markup = bot.get_cancel_keyboard().to_dict()
+        self.assertEqual(
+            markup["inline_keyboard"][0][0]["callback_data"], "cancel_input"
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
