@@ -3,7 +3,8 @@ import sys
 import logging
 import hashlib
 import json
-from io import BytesIO
+import csv
+from io import BytesIO, StringIO
 from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
@@ -464,12 +465,12 @@ async def restore_reminders(app):
         due_at = _as_utc(reminder["due_at"])
         recurrence = db.get_reminder_recurrence(reminder["id"])
         data = {"id": reminder["id"], "message": reminder["message"], "recurrence": recurrence}
-        if recurrence == "daily":
+        if recurrence == "daily" or (recurrence and recurrence.startswith("weekly:")):
             local_due = due_at.astimezone(LOCAL_TIMEZONE)
-            app.job_queue.run_daily(
-                reminder_callback, time=local_due.timetz(), chat_id=reminder["chat_id"],
-                data=data, name=f"reminder-{reminder['id']}",
-            )
+            kwargs = {}
+            if recurrence.startswith("weekly:"):
+                kwargs["days"] = (int(recurrence.split(":", 1)[1]),)
+            app.job_queue.run_daily(reminder_callback, time=local_due.timetz(), chat_id=reminder["chat_id"], data=data, name=f"reminder-{reminder['id']}", **kwargs)
         else:
             app.job_queue.run_once(
                 reminder_callback, when=max((due_at - now).total_seconds(), 1),
@@ -520,6 +521,8 @@ async def initialize_app(app):
         BotCommand("aliskanlik", "Alışkanlık ekle veya takip et"),
         BotCommand("harcama", "Yeni harcama kaydet"),
         BotCommand("harcamalar", "Harcama özetini göster"),
+        BotCommand("butce", "Aylık harcama bütçesi belirle"),
+        BotCommand("harcamaindir", "Harcamaları CSV olarak indir"),
         BotCommand("disaaktar", "Kişisel verilerini indir"),
         BotCommand("etkinlik", "Takvime etkinlik ekle"),
         BotCommand("takvim", "Yaklaşan etkinlikleri göster"),
@@ -576,22 +579,38 @@ async def recurring_reminder_command(update: Update, context: ContextTypes.DEFAU
         await update.message.reply_text("Örnek: `/tekrarla 08:00 | Su iç`", parse_mode="Markdown")
         return
     time_text, message = (part.strip() for part in raw.split("|", 1))
+    day_map = {"pazar": 0, "pazartesi": 1, "salı": 2, "sali": 2, "çarşamba": 3, "carsamba": 3, "perşembe": 4, "persembe": 4, "cuma": 5, "cumartesi": 6}
+    time_parts = time_text.lower().split()
+    recurrence = "daily"
+    days = None
+    if time_parts and time_parts[0] in day_map:
+        recurrence = f"weekly:{day_map[time_parts[0]]}"
+        days = (day_map[time_parts[0]],)
+        time_text = " ".join(time_parts[1:])
     parsed = parse_datetime(time_text)
     if not parsed or not message:
         await update.message.reply_text("Saat veya mesaj anlaşılamadı.")
         return
     now_local = datetime.now(LOCAL_TIMEZONE)
     first = now_local.replace(hour=parsed.hour, minute=parsed.minute, second=0, microsecond=0)
-    if first <= now_local:
+    if days:
+        target_python_weekday = (days[0] - 1) % 7
+        day_delta = (target_python_weekday - now_local.weekday()) % 7
+        if day_delta == 0 and first <= now_local:
+            day_delta = 7
+        first += timedelta(days=day_delta)
+    elif first <= now_local:
         first += timedelta(days=1)
     reminder_id = db.add_reminder(update.effective_user.id, update.effective_chat.id, message, first)
-    db.set_reminder_recurrence(reminder_id, update.effective_user.id, "daily")
+    db.set_reminder_recurrence(reminder_id, update.effective_user.id, recurrence)
+    kwargs = {"days": days} if days else {}
     context.job_queue.run_daily(
         reminder_callback, time=first.timetz(), chat_id=update.effective_chat.id,
-        data={"id": reminder_id, "message": message, "recurrence": "daily"},
-        name=f"reminder-{reminder_id}",
+        data={"id": reminder_id, "message": message, "recurrence": recurrence},
+        name=f"reminder-{reminder_id}", **kwargs,
     )
-    await update.message.reply_text(f"🔁 Her gün {first.strftime('%H:%M')} için hatırlatıcı kuruldu.")
+    label = time_parts[0].capitalize() if days else "Her gün"
+    await update.message.reply_text(f"🔁 {label} {first.strftime('%H:%M')} için hatırlatıcı kuruldu.")
 
 
 async def remind_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -690,7 +709,10 @@ async def show_habits(update):
     keyboard = []
     for habit in habits:
         icon = "✅" if habit["done_today"] else "⬜"
-        text += f"\n{icon} {escape_markdown(habit['name'])} · _{habit['total_days']} gün_"
+        recent_dates = set(db.get_habit_log_dates(habit["id"], update.effective_user.id, 7))
+        last_week = {(datetime.now(timezone.utc).date() - timedelta(days=i)).isoformat() for i in range(7)}
+        weekly = round(len(recent_dates & last_week) / 7 * 100)
+        text += f"\n{icon} {escape_markdown(habit['name'])} · _7 gün %{weekly} · toplam {habit['total_days']}_"
         if not habit["done_today"]:
             keyboard.append([InlineKeyboardButton(
                 f"✓ {habit['name'][:30]}", callback_data=f"check_habit_{habit['id']}"
@@ -729,8 +751,41 @@ async def expenses_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         total = sum(float(row["total"]) for row in summary if row["currency"] == "TRY")
         lines = [f"• {escape_markdown(row['category'])}: *{float(row['total']):,.2f} {row['currency']}*" for row in summary]
-        text = f"💳 *Harcama özeti*\n━━━━━━━━━━━━━━━━━━━━━\nToplam: *{total:,.2f} TL*\n\n" + "\n".join(lines)
+        budget = db.get_budget(update.effective_user.id)
+        budget_text = ""
+        if budget:
+            remaining = float(budget["monthly_limit"]) - total
+            budget_text = f"\nBütçeden kalan: *{remaining:,.2f} {budget['currency']}*"
+        text = f"💳 *Harcama özeti*\n━━━━━━━━━━━━━━━━━━━━━\nToplam: *{total:,.2f} TL*{budget_text}\n\n" + "\n".join(lines)
     await show_panel(update, text, get_back_keyboard())
+
+
+async def budget_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.args:
+        await update.message.reply_text("Örnek: `/butce 10000`", parse_mode="Markdown")
+        return
+    try:
+        amount = float(context.args[0].replace(",", "."))
+        if amount <= 0:
+            raise ValueError
+    except ValueError:
+        await update.message.reply_text("Bütçe pozitif bir sayı olmalı.")
+        return
+    db.set_budget(update.effective_user.id, amount)
+    await update.message.reply_text(f"💳 Aylık bütçe {amount:,.2f} TL olarak ayarlandı.")
+
+
+async def expense_export_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    output = StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["tutar", "para_birimi", "kategori", "not", "tarih"])
+    for row in db.get_expenses(update.effective_user.id):
+        writer.writerow([row["amount"], row["currency"], row["category"], row["note"], row["spent_at"]])
+    content = ("\ufeff" + output.getvalue()).encode("utf-8")
+    await update.message.reply_document(
+        document=InputFile(BytesIO(content), filename="harcamalar.csv"),
+        caption="💳 Harcama kayıtların hazır.",
+    )
 
 
 def _json_default(value):
@@ -1198,6 +1253,8 @@ def main():
     app.add_handler(CommandHandler("aliskanlik", habits_command))
     app.add_handler(CommandHandler("harcama", expense_command))
     app.add_handler(CommandHandler("harcamalar", expenses_command))
+    app.add_handler(CommandHandler("butce", budget_command))
+    app.add_handler(CommandHandler("harcamaindir", expense_export_command))
     app.add_handler(CommandHandler("disaaktar", export_command))
     app.add_handler(CommandHandler("etkinlik", event_command))
     app.add_handler(CommandHandler("takvim", calendar_command))

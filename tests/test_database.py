@@ -94,6 +94,9 @@ class DatabaseTests(unittest.TestCase):
 
         database.add_expense(1, 250, "market", "haftalık alışveriş")
         self.assertEqual(float(database.get_expense_summary(1)[0]["total"]), 250)
+        self.assertEqual(len(database.get_expenses(1)), 1)
+        database.set_budget(1, 5000)
+        self.assertEqual(float(database.get_budget(1)["monthly_limit"]), 5000)
 
         database.add_calendar_event(1, "Doktor", datetime.now(timezone.utc) + timedelta(days=2))
         self.assertEqual(database.get_upcoming_events(1)[0]["title"], "Doktor")

@@ -70,6 +70,8 @@ Telegram'da kendi botunuza gidin ve **/start** yazarak asistanınızı kullanmay
 | `/aliskanlik` | Alışkanlık ekler ve günlük takip eder | `/aliskanlik ekle Kitap oku` |
 | `/harcama` | Harcama kaydeder | `/harcama 250 market` |
 | `/harcamalar` | Kategori bazlı harcama özetini gösterir | `/harcamalar` |
+| `/butce` | Aylık bütçe belirler ve kalan tutarı gösterir | `/butce 10000` |
+| `/harcamaindir` | Harcamaları Excel uyumlu CSV olarak indirir | `/harcamaindir` |
 | `/etkinlik` | Yerel takvime etkinlik ekler | `/etkinlik yarın 14:00 \| Doktor` |
 | `/takvimindir` | Takvimi Google/Outlook uyumlu ICS olarak indirir | `/takvimindir` |
 | `/disaaktar` | Kişisel verileri JSON olarak indirir | `/disaaktar` |

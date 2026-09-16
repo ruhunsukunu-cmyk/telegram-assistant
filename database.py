@@ -58,6 +58,7 @@ def init_db():
         cursor.execute(f"CREATE TABLE IF NOT EXISTS calendar_events (id {id_column}, user_id BIGINT NOT NULL, title TEXT NOT NULL, starts_at TIMESTAMP NOT NULL, ends_at TIMESTAMP NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)")
         cursor.execute("CREATE TABLE IF NOT EXISTS user_preferences (user_id BIGINT PRIMARY KEY, timezone TEXT NOT NULL DEFAULT 'Europe/Istanbul', summary_time TEXT NULL)")
         cursor.execute("CREATE TABLE IF NOT EXISTS daily_summaries (user_id BIGINT PRIMARY KEY, chat_id BIGINT NOT NULL, send_time TEXT NOT NULL, timezone TEXT NOT NULL DEFAULT 'Europe/Istanbul')")
+        cursor.execute("CREATE TABLE IF NOT EXISTS budgets (user_id BIGINT PRIMARY KEY, monthly_limit NUMERIC NOT NULL, currency TEXT NOT NULL DEFAULT 'TRY')")
         conn.commit()
 
 
@@ -269,6 +270,34 @@ def get_expense_summary(user_id):
         return cursor.fetchall()
 
 
+def get_expenses(user_id, limit=1000):
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(_sql("SELECT id, amount, currency, category, note, spent_at FROM expenses WHERE user_id = ? ORDER BY id DESC LIMIT ?"), (user_id, limit))
+        return cursor.fetchall()
+
+
+def set_budget(user_id, monthly_limit, currency="TRY"):
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(_sql("INSERT INTO budgets (user_id, monthly_limit, currency) VALUES (?, ?, ?) ON CONFLICT(user_id) DO UPDATE SET monthly_limit = excluded.monthly_limit, currency = excluded.currency"), (user_id, monthly_limit, currency))
+        conn.commit()
+
+
+def get_budget(user_id):
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(_sql("SELECT monthly_limit, currency FROM budgets WHERE user_id = ?"), (user_id,))
+        return cursor.fetchone()
+
+
+def get_habit_log_dates(habit_id, user_id, limit=30):
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(_sql("SELECT log_date FROM habit_logs WHERE habit_id = ? AND user_id = ? ORDER BY log_date DESC LIMIT ?"), (habit_id, user_id, limit))
+        return [str(row["log_date"]) for row in cursor.fetchall()]
+
+
 def add_calendar_event(user_id, title, starts_at, ends_at=None):
     with get_db() as conn:
         return _insert_and_get_id(conn, "INSERT INTO calendar_events (user_id, title, starts_at, ends_at) VALUES (?, ?, ?, ?)", (user_id, title.strip(), _datetime_value(starts_at), _datetime_value(ends_at) if ends_at else None))
@@ -306,7 +335,7 @@ def delete_user_data(user_id):
         cursor.execute(_sql("DELETE FROM habit_logs WHERE user_id = ?"), (user_id,))
         cursor.execute(_sql("DELETE FROM task_metadata WHERE user_id = ?"), (user_id,))
         cursor.execute(_sql("DELETE FROM reminder_rules WHERE user_id = ?"), (user_id,))
-        for table in ("notes", "tasks", "reminders", "habits", "expenses", "calendar_events", "user_settings", "user_preferences", "daily_summaries"):
+        for table in ("notes", "tasks", "reminders", "habits", "expenses", "calendar_events", "user_settings", "user_preferences", "daily_summaries", "budgets"):
             cursor.execute(_sql(f"DELETE FROM {table} WHERE user_id = ?"), (user_id,))
         conn.commit()
 
