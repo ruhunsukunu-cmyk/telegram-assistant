@@ -76,6 +76,7 @@ class TodaySummaryTests(unittest.IsolatedAsyncioTestCase):
             patch("bot.db.get_pending_reminders", return_value=[{
                 "message": "Su iç", "due_at": datetime.now(timezone.utc)
             }]),
+            patch("bot.get_combined_upcoming_events", new=AsyncMock(return_value=[])),
         ):
             result = await bot.build_today_summary(1)
         self.assertIn("Bugünün özeti", result)

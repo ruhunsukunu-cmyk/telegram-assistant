@@ -44,6 +44,7 @@ import database as db
 from services.weather import get_weather
 from services.finance import get_market_rates
 from services.natural_language import extract_future_datetime, parse_datetime, parse_expense_text
+from services.calendar_sync import fetch_ical_events
 
 # Loglama ayarları
 logging.basicConfig(
@@ -67,6 +68,12 @@ ALLOWED_USER_IDS = {
     int(value) for value in os.getenv("ALLOWED_USER_IDS", "").split(",") if value.strip().isdigit()
 }
 ADMIN_CHAT_ID = os.getenv("ADMIN_CHAT_ID", "").strip()
+CALENDAR_ICAL_URL = os.getenv("CALENDAR_ICAL_URL", "").strip()
+CALENDAR_USER_ID = int(os.getenv("CALENDAR_USER_ID", "0") or 0)
+CALENDAR_CHAT_ID = int(os.getenv("CALENDAR_CHAT_ID", ADMIN_CHAT_ID or "0") or 0)
+CALENDAR_REMINDER_MINUTES = max(
+    0, min(int(os.getenv("CALENDAR_REMINDER_MINUTES", "30") or 30), 10_080)
+)
 
 MAIN_MENU_TEXT = (
     "✨ *Kişisel Asistan*\n"
@@ -208,7 +215,9 @@ async def about_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "⏰ *Hatırlatıcılar ve takvim*\n"
         "• Dakikalık, tarihli, günlük ve haftalık hatırlatıcı kurar\n"
         "• Türkçe cümleleri anlar: _yarın saat 10 doktoru hatırlat_\n"
-        "• Etkinlikleri takip eder, Google/Outlook uyumlu takvim dosyası verir\n\n"
+        "• Telefonda oluşturduğun Google Takvim etkinliklerini gösterir\n"
+        "• Yaklaşan takvim etkinliklerini Telegram'dan bildirir\n"
+        "• Google/Outlook uyumlu takvim dosyası verir\n\n"
         "🎯 *Rutinler ve finans*\n"
         "• Alışkanlıklarını günlük işaretler ve haftalık oranı hesaplar\n"
         "• Harcamalarını kategorilere ayırır, bütçeni ve kalan tutarı gösterir\n"
@@ -294,6 +303,12 @@ async def build_today_summary(user_id):
     weather = await get_weather(city)
     tasks = [task for task in db.get_tasks(user_id) if not task["is_done"]]
     reminders = db.get_pending_reminders(user_id)
+    now_local = datetime.now(LOCAL_TIMEZONE)
+    day_start = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
+    day_end = day_start + timedelta(days=1)
+    events = await get_combined_upcoming_events(
+        user_id, day_start.astimezone(timezone.utc), day_end.astimezone(timezone.utc), 5
+    )
 
     task_lines = [f"• {escape_markdown(task['title'])}" for task in tasks[:3]]
     task_text = "\n".join(task_lines) if task_lines else "_Bekleyen görev yok_"
@@ -307,9 +322,17 @@ async def build_today_summary(user_id):
     else:
         reminder_text = "_Bekleyen hatırlatıcı yok_"
 
+    event_lines = []
+    for event in events[:3]:
+        starts_at = event["starts_at"].astimezone(LOCAL_TIMEZONE)
+        when = "Tüm gün" if event.get("all_day") else starts_at.strftime("%H:%M")
+        event_lines.append(f"• {when} — {escape_markdown(event['title'])}")
+    event_text = "\n".join(event_lines) if event_lines else "_Bugün etkinlik yok_"
+
     return (
         "☀️ *Bugünün özeti*\n\n"
         f"{weather}\n\n"
+        f"📅 *Bugünkü takvim*\n{event_text}\n\n"
         f"📋 *Görevler* · {len(tasks)} bekliyor\n{task_text}\n\n"
         f"⏰ *Sıradaki hatırlatıcı*\n{reminder_text}"
     )
@@ -518,6 +541,79 @@ async def daily_summary_callback(context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+def external_calendar_enabled_for(user_id):
+    return bool(CALENDAR_ICAL_URL and CALENDAR_USER_ID and user_id == CALENDAR_USER_ID)
+
+
+async def get_combined_upcoming_events(user_id, range_start=None, range_end=None, limit=10):
+    range_start = range_start or datetime.now(timezone.utc)
+    range_end = range_end or (range_start + timedelta(days=30))
+    events = []
+    for item in db.get_upcoming_events(user_id, range_start, max(limit, 20)):
+        starts_at = _as_utc(item["starts_at"])
+        if starts_at < range_end:
+            events.append({
+                "key": f"local-{item['id']}",
+                "title": item["title"],
+                "starts_at": starts_at,
+                "ends_at": _as_utc(item["ends_at"]) if item["ends_at"] else None,
+                "all_day": False,
+                "source": "bot",
+            })
+    if external_calendar_enabled_for(user_id):
+        try:
+            external = await fetch_ical_events(
+                CALENDAR_ICAL_URL, range_start, range_end, LOCAL_TIMEZONE
+            )
+            events.extend({
+                "key": event.key,
+                "title": event.title,
+                "starts_at": event.starts_at,
+                "ends_at": event.ends_at,
+                "all_day": event.all_day,
+                "source": "google",
+            } for event in external)
+        except Exception:
+            logger.exception("Harici takvim okunamadı.")
+    return sorted(events, key=lambda event: event["starts_at"])[:limit]
+
+
+async def calendar_sync_callback(context: ContextTypes.DEFAULT_TYPE):
+    """Send one Telegram reminder for each approaching calendar event."""
+    if not (CALENDAR_ICAL_URL and CALENDAR_USER_ID and CALENDAR_CHAT_ID):
+        return
+    now = datetime.now(timezone.utc)
+    try:
+        events = await fetch_ical_events(
+            CALENDAR_ICAL_URL,
+            now - timedelta(minutes=2),
+            now + timedelta(minutes=CALENDAR_REMINDER_MINUTES + 2),
+            LOCAL_TIMEZONE,
+        )
+    except Exception:
+        logger.exception("Takvim bildirim kontrolü başarısız oldu.")
+        return
+
+    for event in events:
+        seconds_until = (event.starts_at - now).total_seconds()
+        if event.all_day or not (-120 <= seconds_until <= CALENDAR_REMINDER_MINUTES * 60):
+            continue
+        if db.was_calendar_notification_sent(event.key, CALENDAR_REMINDER_MINUTES):
+            continue
+        local_start = event.starts_at.astimezone(LOCAL_TIMEZONE)
+        text = (
+            "📅 *Yaklaşan takvim etkinliği*\n"
+            "━━━━━━━━━━━━━━━━━━━━━\n"
+            f"*{escape_markdown(event.title)}*\n"
+            f"🕒 {local_start.strftime('%d.%m.%Y · %H:%M')}\n"
+            f"⏳ Yaklaşık {max(0, round(seconds_until / 60))} dakika kaldı"
+        )
+        await context.bot.send_message(
+            chat_id=CALENDAR_CHAT_ID, text=text, parse_mode="Markdown"
+        )
+        db.mark_calendar_notification_sent(event.key, CALENDAR_REMINDER_MINUTES)
+
+
 def restore_daily_summaries(app):
     for item in db.get_daily_summaries():
         hour, minute = map(int, item["send_time"].split(":"))
@@ -555,6 +651,7 @@ async def initialize_app(app):
         BotCommand("disaaktar", "Kişisel verilerini indir"),
         BotCommand("etkinlik", "Takvime etkinlik ekle"),
         BotCommand("takvim", "Yaklaşan etkinlikleri göster"),
+        BotCommand("takvimbagla", "Telefon takvimi bağlantı durumunu göster"),
         BotCommand("takvimindir", "Takvimi ICS olarak indir"),
         BotCommand("durum", "Botun çalışma durumunu göster"),
         BotCommand("ozetsaat", "Otomatik günlük özet saatini ayarla"),
@@ -564,6 +661,17 @@ async def initialize_app(app):
     ])
     await restore_reminders(app)
     restore_daily_summaries(app)
+    if CALENDAR_ICAL_URL and CALENDAR_USER_ID and CALENDAR_CHAT_ID:
+        app.job_queue.run_repeating(
+            calendar_sync_callback,
+            interval=60,
+            first=10,
+            name="external-calendar-sync",
+        )
+        logger.info(
+            "Harici takvim etkin: %s dakika önce bildirim.",
+            CALENDAR_REMINDER_MINUTES,
+        )
 
 
 async def daily_summary_time_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -851,6 +959,7 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     mode = "webhook" if get_webhook_config() else "polling"
     await update.message.reply_text(
         f"🟢 Bot çalışıyor\n• Bağlantı: {mode}\n• Veri deposu: {storage}\n"
+        f"• Takvim: {'bağlı' if external_calendar_enabled_for(update.effective_user.id) else 'yerel'}\n"
         f"• Saat: {datetime.now(LOCAL_TIMEZONE).strftime('%d.%m.%Y %H:%M')}"
     )
 
@@ -877,16 +986,38 @@ async def event_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def calendar_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    events = db.get_upcoming_events(update.effective_user.id)
+    events = await get_combined_upcoming_events(update.effective_user.id)
     if not events:
         text = "📅 *Takvimin*\n━━━━━━━━━━━━━━━━━━━━━\nYaklaşan etkinlik yok.\n\n`/etkinlik yarın 14:00 | Doktor`"
     else:
         lines = []
         for event in events:
-            starts_at = _as_utc(event["starts_at"]).astimezone(LOCAL_TIMEZONE)
-            lines.append(f"• *{escape_markdown(event['title'])}*\n  _{starts_at.strftime('%d.%m.%Y · %H:%M')}_")
+            starts_at = event["starts_at"].astimezone(LOCAL_TIMEZONE)
+            when = starts_at.strftime("%d.%m.%Y · Tüm gün") if event.get("all_day") else starts_at.strftime("%d.%m.%Y · %H:%M")
+            source = " · Google" if event.get("source") == "google" else ""
+            lines.append(f"• *{escape_markdown(event['title'])}*\n  _{when}{source}_")
         text = "📅 *Yaklaşan etkinlikler*\n━━━━━━━━━━━━━━━━━━━━━\n\n" + "\n\n".join(lines)
     await show_panel(update, text, get_back_keyboard())
+
+
+async def calendar_connect_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if external_calendar_enabled_for(update.effective_user.id):
+        await update.message.reply_text(
+            "✅ *Telefon takvimin bağlı*\n\n"
+            f"Etkinlikler Google Takvim'den okunuyor ve {CALENDAR_REMINDER_MINUTES} dakika "
+            "önce Telegram bildirimi gönderiliyor.",
+            parse_mode="Markdown",
+            reply_markup=get_back_keyboard(),
+        )
+        return
+    await update.message.reply_text(
+        "🔗 *Google Takvim bağlantısı henüz tamamlanmadı*\n\n"
+        f"Telegram kullanıcı kimliğin: `{update.effective_user.id}`\n"
+        f"Sohbet kimliğin: `{update.effective_chat.id}`\n\n"
+        "Bağlantı adresi mesajla gönderilmemeli; Railway'de gizli değişken olarak saklanmalıdır.",
+        parse_mode="Markdown",
+        reply_markup=get_back_keyboard(),
+    )
 
 
 async def calendar_export_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1306,6 +1437,7 @@ def main():
     app.add_handler(CommandHandler("disaaktar", export_command))
     app.add_handler(CommandHandler("etkinlik", event_command))
     app.add_handler(CommandHandler("takvim", calendar_command))
+    app.add_handler(CommandHandler("takvimbagla", calendar_connect_command))
     app.add_handler(CommandHandler("takvimindir", calendar_export_command))
     app.add_handler(CommandHandler("durum", status_command))
     app.add_handler(CommandHandler("ozetsaat", daily_summary_time_command))

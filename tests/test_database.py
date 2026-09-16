@@ -131,6 +131,12 @@ class DatabaseTests(unittest.TestCase):
         database.set_daily_summary(1, 99, "08:00")
         self.assertEqual(database.get_daily_summaries()[0]["send_time"], "08:00")
 
+    def test_calendar_notification_is_sent_only_once(self):
+        self.assertFalse(database.was_calendar_notification_sent("event-key", 30))
+        self.assertTrue(database.mark_calendar_notification_sent("event-key", 30))
+        self.assertFalse(database.mark_calendar_notification_sent("event-key", 30))
+        self.assertTrue(database.was_calendar_notification_sent("event-key", 30))
+
     def test_delete_user_data_removes_owned_records(self):
         database.add_note(1, "özel not")
         database.add_task(1, "özel görev")

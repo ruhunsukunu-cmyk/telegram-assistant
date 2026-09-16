@@ -1,6 +1,9 @@
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
+from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 
+from services.calendar_sync import parse_ical_events
 from services.finance import format_price, get_market_rates
 from services.weather import get_weather
 
@@ -26,6 +29,28 @@ def response(payload):
 
 
 class ServiceTests(unittest.IsolatedAsyncioTestCase):
+    def test_ical_event_is_normalized_and_keyed(self):
+        content = b"""BEGIN:VCALENDAR\r
+VERSION:2.0\r
+BEGIN:VEVENT\r
+UID:test-event\r
+DTSTART:20260918T090000Z\r
+DTEND:20260918T100000Z\r
+SUMMARY:Doktor randevusu\r
+END:VEVENT\r
+END:VCALENDAR\r
+"""
+        events = parse_ical_events(
+            content,
+            datetime(2026, 9, 18, tzinfo=timezone.utc),
+            datetime(2026, 9, 19, tzinfo=timezone.utc),
+            ZoneInfo("Europe/Istanbul"),
+        )
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0].title, "Doktor randevusu")
+        self.assertEqual(events[0].starts_at.hour, 9)
+        self.assertEqual(len(events[0].key), 64)
+
     def test_format_price_handles_missing_values(self):
         self.assertEqual(format_price("--"), "--")
         self.assertEqual(format_price(1234567), "1,234,567")

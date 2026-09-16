@@ -14,6 +14,7 @@ Telefonunuzdan 7/24 erişebileceğiniz, görevlerinizi ve notlarınızı tutan, 
 - 💾 **Kalıcı veri desteği:** PostgreSQL (`DATABASE_URL`) veya kalıcı disk üzerindeki SQLite (`DB_PATH`) ile bot yeniden başlasa bile kayıtlar korunur.
 - 🎛️ **İnteraktif Menü:** Mesaj yazmadan butonlarla yönetebileceğiniz modern Inline Keyboard arayüzü.
 - ✨ **Yetenek Rehberi:** Ana menüdeki “Bu bot ne işe yarar?” ekranı bütün özellikleri tek yerde açıklar.
+- 📅 **Telefon Takvimi:** Google Takvim'deki etkinlikleri salt okunur iCal akışıyla gösterir ve yaklaşınca Telegram bildirimi yollar.
 
 ---
 
@@ -51,12 +52,27 @@ WEBHOOK_URL=https://railway-servis-alan-adiniz.up.railway.app
 MINI_APP_URL=https://telegram-assistant-panel.onrender.com
 DEFAULT_CITY=Istanbul
 TIMEZONE=Europe/Istanbul
+CALENDAR_ICAL_URL=https://calendar.google.com/calendar/ical/.../basic.ics
+CALENDAR_USER_ID=Telegram_kullanici_kimliginiz
+CALENDAR_CHAT_ID=Telegram_sohbet_kimliginiz
+CALENDAR_REMINDER_MINUTES=30
 ```
 
 `DATABASE_URL` ve `DB_PATH` birlikte tanımlanırsa PostgreSQL kullanılır. Kalıcı Volume
 ile düşük trafikli kişisel kullanımda yalnızca `DB_PATH` tanımlamak daha ekonomiktir.
 Render PostgreSQL'den ilk geçişte eski verileri bir kez kopyalamak için geçici olarak
 `SOURCE_DATABASE_URL` tanımlanabilir. Başarılı geçişten sonra bu değişken kaldırılmalıdır.
+
+### Google Takvim bağlantısı
+
+1. Telegram'da bota `/takvimbagla` yazıp kullanıcı ve sohbet kimliklerinizi görün.
+2. Bilgisayarda Google Takvim'i açın; **Ayarlar > Takvimimin ayarları > Takvimi entegre et** bölümüne gidin.
+3. **iCal biçiminde gizli adres** değerini kopyalayın ve Railway'de `CALENDAR_ICAL_URL` olarak saklayın.
+4. `/takvimbagla` çıktısındaki değerleri `CALENDAR_USER_ID` ve `CALENDAR_CHAT_ID` olarak ekleyin.
+5. İstenen uyarı süresini dakika cinsinden `CALENDAR_REMINDER_MINUTES` ile ayarlayın.
+
+Gizli iCal adresini Telegram mesajına, GitHub'a veya `.env.example` dosyasına yazmayın.
+Bağlantı salt okunurdur; bot takviminizde etkinlik değiştiremez veya silemez.
 
 ### 3. Botu Çalıştırın
 - **En Kolay Yol:** Proje klasöründeki `start.bat` dosyasına çift tıklayın!
@@ -97,6 +113,8 @@ Telegram'da kendi botunuza gidin ve **/start** yazarak asistanınızı kullanmay
 | `/butce` | Aylık bütçe belirler ve kalan tutarı gösterir | `/butce 10000` |
 | `/harcamaindir` | Harcamaları Excel uyumlu CSV olarak indirir | `/harcamaindir` |
 | `/etkinlik` | Yerel takvime etkinlik ekler | `/etkinlik yarın 14:00 \| Doktor` |
+| `/takvim` | Yerel ve bağlı Google Takvim etkinliklerini gösterir | `/takvim` |
+| `/takvimbagla` | Takvim bağlantısını ve gerekli kimlikleri gösterir | `/takvimbagla` |
 | `/takvimindir` | Takvimi Google/Outlook uyumlu ICS olarak indirir | `/takvimindir` |
 | `/disaaktar` | Kişisel verileri JSON olarak indirir | `/disaaktar` |
 | `/verilerimisil` | Tüm kişisel verileri onayla siler | `/verilerimisil` |

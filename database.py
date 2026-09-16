@@ -12,7 +12,7 @@ DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
 MIGRATION_TABLES = (
     "notes", "tasks", "reminders", "user_settings", "task_metadata",
     "reminder_rules", "habits", "habit_logs", "expenses", "calendar_events",
-    "user_preferences", "daily_summaries", "budgets",
+    "user_preferences", "daily_summaries", "budgets", "calendar_notifications",
 )
 
 
@@ -80,6 +80,7 @@ def init_db():
         cursor.execute("CREATE TABLE IF NOT EXISTS daily_summaries (user_id BIGINT PRIMARY KEY, chat_id BIGINT NOT NULL, send_time TEXT NOT NULL, timezone TEXT NOT NULL DEFAULT 'Europe/Istanbul')")
         cursor.execute("CREATE TABLE IF NOT EXISTS budgets (user_id BIGINT PRIMARY KEY, monthly_limit NUMERIC NOT NULL, currency TEXT NOT NULL DEFAULT 'TRY')")
         cursor.execute("CREATE TABLE IF NOT EXISTS app_metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+        cursor.execute("CREATE TABLE IF NOT EXISTS calendar_notifications (event_key TEXT NOT NULL, offset_minutes INTEGER NOT NULL, sent_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY (event_key, offset_minutes))")
         conn.commit()
 
 
@@ -385,6 +386,27 @@ def get_upcoming_events(user_id, after=None, limit=10):
         cursor = conn.cursor()
         cursor.execute(_sql("SELECT id, title, starts_at, ends_at FROM calendar_events WHERE user_id = ? AND starts_at >= ? ORDER BY starts_at LIMIT ?"), (user_id, _datetime_value(after), limit))
         return cursor.fetchall()
+
+
+def was_calendar_notification_sent(event_key, offset_minutes):
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            _sql("SELECT 1 FROM calendar_notifications WHERE event_key = ? AND offset_minutes = ?"),
+            (event_key, offset_minutes),
+        )
+        return cursor.fetchone() is not None
+
+
+def mark_calendar_notification_sent(event_key, offset_minutes):
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            _sql("INSERT INTO calendar_notifications (event_key, offset_minutes) VALUES (?, ?) ON CONFLICT(event_key, offset_minutes) DO NOTHING"),
+            (event_key, offset_minutes),
+        )
+        conn.commit()
+        return cursor.rowcount > 0
 
 
 def export_user_data(user_id):
