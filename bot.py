@@ -1,6 +1,7 @@
 import os
 import sys
 import logging
+import hashlib
 from datetime import datetime, timedelta, timezone
 
 # Windows konsolunda emoji karakterlerinin hata vermesini engelle
@@ -13,8 +14,6 @@ if sys.platform == "win32":
 
 from dotenv import load_dotenv
 load_dotenv()
-import threading
-from http.server import HTTPServer, BaseHTTPRequestHandler
 from telegram import (
     BotCommand,
     Update,
@@ -24,23 +23,6 @@ from telegram import (
 from telegram.helpers import escape_markdown
 
 
-class HealthCheckHandler(BaseHTTPRequestHandler):
-    """Bulut sunucularının (Render, Koyeb vb.) botu canlı görmesi için HTTP yanıtı"""
-    def do_GET(self):
-        self.send_response(200)
-        self.send_header("Content-type", "application/json")
-        self.end_headers()
-        self.wfile.write(b'{"status": "online", "service": "telegram-assistant-bot"}')
-
-    def log_message(self, format, *args):
-        pass  # Gereksiz konsol kirliliğini engelle
-
-
-def start_health_server(port: int):
-    server = HTTPServer(("0.0.0.0", port), HealthCheckHandler)
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    logger.info(f"🌐 Bulut sağlık kontrolü sunucusu port {port} üzerinde hazır.")
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
@@ -66,6 +48,10 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
 DEFAULT_CITY = os.getenv("DEFAULT_CITY", "Istanbul")
+WEBHOOK_BASE_URL = (
+    os.getenv("WEBHOOK_URL", "").strip()
+    or os.getenv("RENDER_EXTERNAL_URL", "").strip()
+)
 
 MAIN_MENU_TEXT = (
     "✨ *Kişisel Asistan Paneli*\n"
@@ -100,6 +86,19 @@ def get_main_keyboard():
 
 def get_back_keyboard():
     return InlineKeyboardMarkup([[InlineKeyboardButton("‹ Ana menü", callback_data="btn_home")]])
+
+
+def get_webhook_config(token=TOKEN, base_url=WEBHOOK_BASE_URL):
+    """Tokenı URL'ye koymadan güvenli webhook adresi ve doğrulama anahtarı üret."""
+    if not base_url:
+        return None
+    secret = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    path = "telegram"
+    return {
+        "url_path": path,
+        "webhook_url": f"{base_url.rstrip('/')}/{path}",
+        "secret_token": secret,
+    }
 
 
 async def show_panel(update, text, reply_markup=None, parse_mode="Markdown"):
@@ -504,14 +503,6 @@ def main():
         print("=" * 60 + "\n")
         sys.exit(1)
 
-    # Bulut ortamı (Render, Koyeb vb.) portu verdiyse HTTP sunucusunu başlat
-    port = os.getenv("PORT")
-    if port:
-        try:
-            start_health_server(int(port))
-        except Exception as e:
-            logger.warning(f"Sağlık sunucusu başlatılamadı: {e}")
-
     print("🚀 Telegram Asistan Botu başlatılıyor...")
     app = ApplicationBuilder().token(TOKEN).post_init(initialize_app).build()
 
@@ -531,8 +522,21 @@ def main():
     app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    print("✅ Bot hazır ve mesajları dinliyor! Telegram'dan botunuzu başlatabilirsiniz.")
-    app.run_polling()
+    webhook = get_webhook_config()
+    if webhook:
+        port = int(os.getenv("PORT", "10000"))
+        logger.info("Telegram webhook modu başlatılıyor: %s", webhook["webhook_url"])
+        app.run_webhook(
+            listen="0.0.0.0",
+            port=port,
+            url_path=webhook["url_path"],
+            webhook_url=webhook["webhook_url"],
+            secret_token=webhook["secret_token"],
+            drop_pending_updates=False,
+        )
+    else:
+        logger.info("Yerel polling modu başlatılıyor.")
+        app.run_polling(drop_pending_updates=False)
 
 
 if __name__ == "__main__":

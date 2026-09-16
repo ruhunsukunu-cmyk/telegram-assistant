@@ -34,6 +34,15 @@ class UiTests(unittest.TestCase):
         self.assertIn("Kişisel Asistan Paneli", bot.MAIN_MENU_TEXT)
         self.assertLess(len(bot.MAIN_MENU_TEXT), 300)
 
+    def test_webhook_config_does_not_expose_bot_token(self):
+        config = bot.get_webhook_config("123:super-secret", "https://bot.example.com/")
+        self.assertEqual(config["webhook_url"], "https://bot.example.com/telegram")
+        self.assertNotIn("super-secret", config["webhook_url"])
+        self.assertEqual(len(config["secret_token"]), 64)
+
+    def test_local_mode_has_no_webhook(self):
+        self.assertIsNone(bot.get_webhook_config("token", ""))
+
 
 if __name__ == "__main__":
     unittest.main()
