@@ -28,6 +28,7 @@ class UiTests(unittest.TestCase):
                 "btn_calendar",
                 "btn_about",
                 "btn_help",
+                "btn_ai",
             },
         )
 
@@ -65,6 +66,11 @@ class UiTests(unittest.TestCase):
         self.assertEqual(
             markup["inline_keyboard"][0][0]["callback_data"], "cancel_input"
         )
+
+    def test_long_ai_answers_are_split_for_telegram(self):
+        chunks = bot.split_telegram_text("a" * 8001)
+        self.assertGreater(len(chunks), 1)
+        self.assertTrue(all(len(chunk) <= 3900 for chunk in chunks))
 
 
 class TodaySummaryTests(unittest.IsolatedAsyncioTestCase):

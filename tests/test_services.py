@@ -3,9 +3,16 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
+import httpx
+
 from services.calendar_sync import parse_ical_events
 from services.finance import format_price, get_market_rates
 from services.weather import get_weather
+from services.gemini import (
+    GeminiConfigurationError,
+    GeminiRateLimitError,
+    generate_text,
+)
 
 
 class AsyncClientContext:
@@ -29,6 +36,35 @@ def response(payload):
 
 
 class ServiceTests(unittest.IsolatedAsyncioTestCase):
+    async def test_gemini_success(self):
+        async def handler(request):
+            self.assertEqual(request.headers["x-goog-api-key"], "test-key")
+            self.assertNotIn("test-key", str(request.url))
+            return httpx.Response(
+                200,
+                json={"candidates": [{"content": {"parts": [{"text": "Merhaba!"}]}}]},
+            )
+
+        transport = httpx.MockTransport(handler)
+        result = await generate_text(
+            "test-key", "Nasılsın?", "Türkçe yanıtla", transport=transport
+        )
+        self.assertEqual(result, "Merhaba!")
+
+    async def test_gemini_rate_limit_is_distinct(self):
+        async def handler(request):
+            return httpx.Response(429, json={"error": {}})
+
+        with self.assertRaises(GeminiRateLimitError):
+            await generate_text(
+                "test-key", "Soru", "Yanıtla",
+                transport=httpx.MockTransport(handler),
+            )
+
+    async def test_gemini_rejects_invalid_model_name(self):
+        with self.assertRaises(GeminiConfigurationError):
+            await generate_text("test-key", "Soru", "Yanıtla", model="bad/model")
+
     def test_ical_event_is_normalized_and_keyed(self):
         content = b"""BEGIN:VCALENDAR\r
 VERSION:2.0\r

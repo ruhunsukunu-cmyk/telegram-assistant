@@ -15,6 +15,7 @@ Telefonunuzdan 7/24 erişebileceğiniz, görevlerinizi ve notlarınızı tutan, 
 - 🎛️ **İnteraktif Menü:** Mesaj yazmadan butonlarla yönetebileceğiniz modern Inline Keyboard arayüzü.
 - ✨ **Yetenek Rehberi:** Ana menüdeki “Bu bot ne işe yarar?” ekranı bütün özellikleri tek yerde açıklar.
 - 📅 **Telefon Takvimi:** Google Takvim'deki etkinlikleri salt okunur iCal akışıyla gösterir ve yaklaşınca Telegram bildirimi yollar.
+- 🤖 **Gemini Asistan:** Soruları yanıtlar, fikir üretir ve bekleyen görevler ile yakın takvimden yararlanarak gün planlamasına yardım eder.
 
 ---
 
@@ -56,6 +57,8 @@ CALENDAR_ICAL_URL=https://calendar.google.com/calendar/ical/.../basic.ics
 CALENDAR_USER_ID=Telegram_kullanici_kimliginiz
 CALENDAR_CHAT_ID=Telegram_sohbet_kimliginiz
 CALENDAR_REMINDER_MINUTES=30
+GEMINI_API_KEY=Google_AI_Studio_anahtariniz
+GEMINI_MODEL=gemini-2.5-flash
 ```
 
 `DATABASE_URL` ve `DB_PATH` birlikte tanımlanırsa PostgreSQL kullanılır. Kalıcı Volume
@@ -74,6 +77,18 @@ Render PostgreSQL'den ilk geçişte eski verileri bir kez kopyalamak için geçi
 Gizli iCal adresini Telegram mesajına, GitHub'a veya `.env.example` dosyasına yazmayın.
 Bağlantı salt okunurdur; bot takviminizde etkinlik değiştiremez veya silemez.
 
+### Gemini bağlantısı
+
+1. Google AI Studio'da bir API anahtarı oluşturun.
+2. Anahtarı Railway servis değişkenlerine `GEMINI_API_KEY` adıyla ekleyin.
+3. İsteğe bağlı olarak `GEMINI_MODEL` değerini değiştirin; varsayılan model `gemini-2.5-flash`tır.
+4. Telegram'da `/sor Bugün neye öncelik vermeliyim?` yazarak bağlantıyı deneyin.
+
+Gemini kullanıldığında yazdığınız soru ile yalnızca bekleyen görevleriniz, yaklaşan
+hatırlatıcılarınız, önünüzdeki 7 günlük takvim ve varsayılan şehriniz Google'a gönderilir.
+Notlar ve harcamalar bağlama eklenmez. Google'ın ücretsiz Gemini API katmanındaki içerikleri
+ürün geliştirme amacıyla kullanabileceğini hesaba katarak hassas bilgi göndermeyin.
+
 ### 3. Botu Çalıştırın
 - **En Kolay Yol:** Proje klasöründeki `start.bat` dosyasına çift tıklayın!
 - **Terminal ile:**
@@ -91,6 +106,7 @@ Telegram'da kendi botunuza gidin ve **/start** yazarak asistanınızı kullanmay
 | Komut | Açıklama | Örnek |
 |---|---|---|
 | `/start` | Ana karşılama panelini ve interaktif butonları açar | `/start` |
+| `/sor <soru>` | Gemini kişisel asistana soru sorar | `/sor Bugün neye öncelik vermeliyim?` |
 | `/hakkinda` | Botun yapabildiği bütün işleri kategoriler halinde gösterir | `/hakkinda` |
 | `/hava <şehir>` | İstenen şehrin canlı hava durumunu getirir | `/hava ankara` |
 | `/sehir <şehir>` | Menüde kullanılacak varsayılan şehri kaydeder | `/sehir Ankara` |
