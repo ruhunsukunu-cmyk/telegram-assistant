@@ -1,14 +1,19 @@
 import sqlite3
 import os
+from contextlib import contextmanager
 from datetime import datetime
 
 DB_PATH = os.path.join(os.path.dirname(__file__), "assistant.db")
 
 
+@contextmanager
 def get_db():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
-    return conn
+    try:
+        yield conn
+    finally:
+        conn.close()
 
 
 def init_db():

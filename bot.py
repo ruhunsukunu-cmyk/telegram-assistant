@@ -19,6 +19,7 @@ from telegram import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
 )
+from telegram.helpers import escape_markdown
 
 
 class HealthCheckHandler(BaseHTTPRequestHandler):
@@ -60,6 +61,9 @@ logging.basicConfig(
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
+# httpx logs full request URLs. Telegram embeds the bot token in that URL, so
+# INFO-level request logging would leak the credential to Render logs.
+logging.getLogger("httpx").setLevel(logging.WARNING)
 
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
 DEFAULT_CITY = os.getenv("DEFAULT_CITY", "Istanbul")
@@ -93,7 +97,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     name = user.first_name if user else "Dostum"
 
     welcome_text = (
-        f"👋 Merhaba *{name}*! Ben senin kişisel *Telegram Asistanınım*.\n\n"
+        f"👋 Merhaba *{escape_markdown(name)}*! Ben senin kişisel *Telegram Asistanınım*.\n\n"
         f"Günlük işlerinde, hatırlatmalarında, notlarında ve piyasa/hava takibinde "
         f"sana yardımcı olmak için 7/24 buradayım.\n\n"
         f"Aşağıdaki butonları kullanarak hızlıca işlem yapabilirsin 👇"
@@ -158,7 +162,7 @@ async def add_note_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     note_id = db.add_note(user_id, content)
     await update.message.reply_text(
-        f"✅ Not kaydedildi (ID: `{note_id}`):\n\n_{content}_",
+        f"✅ Not kaydedildi (ID: `{note_id}`):\n\n_{escape_markdown(content)}_",
         parse_mode="Markdown"
     )
 
@@ -180,7 +184,7 @@ async def list_notes_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
     keyboard = []
     for n in notes[:10]:  # Son 10 not
         dt = n["created_at"].split()[0] if n["created_at"] else ""
-        msg += f"• `{n['content']}` _({dt})_\n"
+        msg += f"• `{escape_markdown(n['content'])}` _({dt})_\n"
         keyboard.append([
             InlineKeyboardButton(f"🗑️ Sil: {n['content'][:20]}...", callback_data=f"del_note_{n['id']}")
         ])
@@ -206,7 +210,7 @@ async def add_task_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     task_id = db.add_task(user_id, title)
     await update.message.reply_text(
-        f"📋 Görev listene eklendi (ID: `{task_id}`):\n\n_{title}_",
+        f"📋 Görev listene eklendi (ID: `{task_id}`):\n\n_{escape_markdown(title)}_",
         parse_mode="Markdown"
     )
 
@@ -228,7 +232,7 @@ async def list_tasks_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
     keyboard = []
     for t in tasks:
         status_emoji = "✅" if t["is_done"] else "⬜"
-        msg += f"{status_emoji} *{t['title']}*\n"
+        msg += f"{status_emoji} *{escape_markdown(t['title'])}*\n"
 
         if not t["is_done"]:
             keyboard.append([
@@ -257,7 +261,7 @@ async def reminder_callback(context: ContextTypes.DEFAULT_TYPE):
     alarm_msg = (
         "⏰ *DİKKAT! HATIRLATMA ZAMANI!*\n"
         "━━━━━━━━━━━━━━━━━━━━━\n"
-        f"🔔 *Hatırlatıcı:* {message_text}\n"
+        f"🔔 *Hatırlatıcı:* {escape_markdown(message_text)}\n"
         f"🕒 *Zaman:* {datetime.now().strftime('%H:%M')}"
     )
     await context.bot.send_message(chat_id=chat_id, text=alarm_msg, parse_mode="Markdown")
@@ -296,7 +300,7 @@ async def remind_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(
         f"⏳ Anlaşıldı! *{minutes} dakika* sonra sana şunu hatırlatacağım:\n\n"
-        f"🔔 _{remind_text}_",
+        f"🔔 _{escape_markdown(remind_text)}_",
         parse_mode="Markdown"
     )
 

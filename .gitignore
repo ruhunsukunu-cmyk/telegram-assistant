@@ -1,4 +1,6 @@
 venv/
+.venv/
+.deps/
 .env
 *.db
 __pycache__/
