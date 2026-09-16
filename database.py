@@ -101,7 +101,14 @@ def migrate_postgres_to_sqlite(source_url):
 
         copied = 0
         with connect(source_url, row_factory=dict_row) as source:
-            for table in MIGRATION_TABLES:
+            existing_tables = {
+                row["table_name"]
+                for row in source.execute(
+                    "SELECT table_name FROM information_schema.tables "
+                    "WHERE table_schema = 'public'"
+                ).fetchall()
+            }
+            for table in (name for name in MIGRATION_TABLES if name in existing_tables):
                 rows = source.execute(f'SELECT * FROM "{table}"').fetchall()
                 for row in rows:
                     columns = tuple(row.keys())
