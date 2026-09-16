@@ -1,6 +1,11 @@
 import httpx
 
 
+def format_price(value):
+    """Format numeric prices without crashing when an API omits a value."""
+    return f"{value:,}" if isinstance(value, (int, float)) else "--"
+
+
 async def get_market_rates() -> str:
     """Tamamen ücretsiz halka açık API'lerden döviz ve kripto kurlarını çeker."""
     try:
@@ -8,6 +13,7 @@ async def get_market_rates() -> str:
             # 1. Döviz kurları (Frankfurter - Avrupa Merkez Bankası verisi, ücretsiz ve anahtarsız)
             currency_url = "https://api.frankfurter.dev/v1/latest?base=TRY&symbols=USD,EUR,GBP"
             c_res = await client.get(currency_url)
+            c_res.raise_for_status()
             c_data = c_res.json()
             rates = c_data.get("rates", {})
 
@@ -19,6 +25,7 @@ async def get_market_rates() -> str:
             # 2. Kripto kurları (CoinGecko public API)
             crypto_url = "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,solana&vs_currencies=usd,try"
             crypto_res = await client.get(crypto_url)
+            crypto_res.raise_for_status()
             crypto_data = crypto_res.json()
 
             btc_usd = crypto_data.get("bitcoin", {}).get("usd", "--")
@@ -33,9 +40,9 @@ async def get_market_rates() -> str:
                 f"💷 *Sterlin (GBP):* `{gbp_try} ₺`\n\n"
                 f"🪙 *Kripto Piyasası*\n"
                 f"━━━━━━━━━━━━━━━━━━\n"
-                f"🟠 *Bitcoin (BTC):* `${btc_usd:,}`\n"
-                f"🔷 *Ethereum (ETH):* `${eth_usd:,}`\n"
-                f"🟣 *Solana (SOL):* `${sol_usd:,}`\n"
+                f"🟠 *Bitcoin (BTC):* `${format_price(btc_usd)}`\n"
+                f"🔷 *Ethereum (ETH):* `${format_price(eth_usd)}`\n"
+                f"🟣 *Solana (SOL):* `${format_price(sol_usd)}`\n"
             )
     except Exception as e:
         return f"⚠️ Finans verileri alınırken bir hata oluştu: {str(e)}"

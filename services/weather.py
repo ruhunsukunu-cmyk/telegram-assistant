@@ -29,8 +29,12 @@ async def get_weather(city_name: str = "Istanbul") -> str:
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
             # 1. Şehir koordinatlarını bul (Geocoding API - Ücretsiz)
-            geo_url = f"https://geocoding-api.open-meteo.com/v1/search?name={city_name}&count=1&language=tr&format=json"
-            geo_res = await client.get(geo_url)
+            geo_url = "https://geocoding-api.open-meteo.com/v1/search"
+            geo_res = await client.get(
+                geo_url,
+                params={"name": city_name, "count": 1, "language": "tr", "format": "json"},
+            )
+            geo_res.raise_for_status()
             geo_data = geo_res.json()
 
             if not geo_data.get("results"):
@@ -43,11 +47,16 @@ async def get_weather(city_name: str = "Istanbul") -> str:
             country = city_info.get("country", "")
 
             # 2. Hava durumu verisini çek (Forecast API - Ücretsiz)
-            weather_url = (
-                f"https://api.open-meteo.com/v1/forecast?"
-                f"latitude={lat}&longitude={lon}&current=temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m"
+            weather_url = "https://api.open-meteo.com/v1/forecast"
+            weather_res = await client.get(
+                weather_url,
+                params={
+                    "latitude": lat,
+                    "longitude": lon,
+                    "current": "temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m",
+                },
             )
-            weather_res = await client.get(weather_url)
+            weather_res.raise_for_status()
             weather_data = weather_res.json()
 
             current = weather_data.get("current", {})
