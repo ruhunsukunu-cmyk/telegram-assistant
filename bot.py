@@ -2,7 +2,9 @@ import os
 import sys
 import logging
 import hashlib
-from datetime import datetime, timedelta, timezone
+import json
+from io import BytesIO
+from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 # Windows konsolunda emoji karakterlerinin hata vermesini engelle
@@ -17,6 +19,8 @@ from dotenv import load_dotenv
 load_dotenv()
 from telegram import (
     BotCommand,
+    InputFile,
+    WebAppInfo,
     Update,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
@@ -25,10 +29,12 @@ from telegram.helpers import escape_markdown
 
 
 from telegram.ext import (
+    ApplicationHandlerStop,
     ApplicationBuilder,
     CommandHandler,
     CallbackQueryHandler,
     MessageHandler,
+    TypeHandler,
     ContextTypes,
     filters,
 )
@@ -36,6 +42,7 @@ from telegram.ext import (
 import database as db
 from services.weather import get_weather
 from services.finance import get_market_rates
+from services.natural_language import extract_future_datetime, parse_datetime, parse_expense_text
 
 # Loglama ayarları
 logging.basicConfig(
@@ -54,6 +61,11 @@ WEBHOOK_BASE_URL = (
     os.getenv("WEBHOOK_URL", "").strip()
     or os.getenv("RENDER_EXTERNAL_URL", "").strip()
 )
+MINI_APP_URL = os.getenv("MINI_APP_URL", "").strip()
+ALLOWED_USER_IDS = {
+    int(value) for value in os.getenv("ALLOWED_USER_IDS", "").split(",") if value.strip().isdigit()
+}
+ADMIN_CHAT_ID = os.getenv("ADMIN_CHAT_ID", "").strip()
 
 MAIN_MENU_TEXT = (
     "✨ *Kişisel Asistan Paneli*\n"
@@ -77,6 +89,10 @@ def get_main_keyboard():
             InlineKeyboardButton("📝 Notlar", callback_data="btn_notes"),
         ],
         [
+            InlineKeyboardButton("🎯 Alışkanlıklar", callback_data="btn_habits"),
+            InlineKeyboardButton("💳 Harcamalar", callback_data="btn_expenses"),
+        ],
+        [
             InlineKeyboardButton("➕ Hızlı ekle", callback_data="btn_quick_add"),
             InlineKeyboardButton("⏰ Hatırlatıcılar", callback_data="btn_reminders"),
         ],
@@ -84,6 +100,8 @@ def get_main_keyboard():
             InlineKeyboardButton("❓ Yardım ve komutlar", callback_data="btn_help"),
         ]
     ]
+    if MINI_APP_URL:
+        keyboard.append([InlineKeyboardButton("📱 Görsel panel", web_app=WebAppInfo(MINI_APP_URL))])
     return InlineKeyboardMarkup(keyboard)
 
 
@@ -341,10 +359,26 @@ async def add_task_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+async def add_detailed_task_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    raw = " ".join(context.args).strip()
+    parts = [part.strip() for part in raw.split("|", 2)]
+    priority_map = {"yüksek": "high", "yuksek": "high", "normal": "normal", "düşük": "low", "dusuk": "low"}
+    if len(parts) != 3 or parts[0].lower() not in priority_map:
+        await update.message.reply_text("Örnek: `/gorevdetay yüksek | yarın 18:00 | Raporu bitir`", parse_mode="Markdown")
+        return
+    due_at = parse_datetime(parts[1])
+    if not due_at or not parts[2]:
+        await update.message.reply_text("Görev tarihi veya açıklaması anlaşılamadı.")
+        return
+    task_id = db.add_task(update.effective_user.id, parts[2][:500])
+    db.set_task_metadata(task_id, update.effective_user.id, priority_map[parts[0].lower()], due_at)
+    await update.message.reply_text("✅ Tarihli görev eklendi.", reply_markup=get_main_keyboard())
+
+
 async def list_tasks_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """/gorevler"""
     user_id = update.effective_user.id
-    tasks = db.get_tasks(user_id)
+    tasks = db.get_enriched_tasks(user_id)
 
     if not tasks:
         text = "📋 *Görevlerin*\n━━━━━━━━━━━━━━━━━━━━━\n🎉 Bekleyen görevin yok.\n\nEklemek için: `/gorev <iş>`"
@@ -355,8 +389,12 @@ async def list_tasks_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
     msg = f"📋 *Görevlerin*  ·  _{pending_count} bekliyor_\n━━━━━━━━━━━━━━━━━━━━━\n"
     keyboard = []
     for index, t in enumerate(tasks[:15], 1):
+        priority_emoji = {"high": "🔴", "normal": "🟡", "low": "🟢"}.get(t["priority"], "🟡")
         status_emoji = "✅" if t["is_done"] else "⬜"
-        msg += f"\n{status_emoji} *{index}.* {escape_markdown(t['title'])}\n"
+        due_text = ""
+        if t["due_at"]:
+            due_text = f" · _{_as_utc(t['due_at']).astimezone(LOCAL_TIMEZONE).strftime('%d.%m %H:%M')}_"
+        msg += f"\n{status_emoji} {priority_emoji} *{index}.* {escape_markdown(t['title'])}{due_text}\n"
 
         if not t["is_done"]:
             keyboard.append([
@@ -406,7 +444,8 @@ async def reminder_callback(context: ContextTypes.DEFAULT_TYPE):
         f"🕒 *Zaman:* {datetime.now().strftime('%H:%M')}"
     )
     await context.bot.send_message(chat_id=chat_id, text=alarm_msg, parse_mode="Markdown")
-    db.mark_reminder_sent(reminder_id)
+    if not job.data.get("recurrence"):
+        db.mark_reminder_sent(reminder_id)
 
 
 def _as_utc(value):
@@ -423,16 +462,41 @@ async def restore_reminders(app):
     restored = 0
     for reminder in db.get_pending_reminders():
         due_at = _as_utc(reminder["due_at"])
-        app.job_queue.run_once(
-            reminder_callback,
-            when=max((due_at - now).total_seconds(), 1),
-            chat_id=reminder["chat_id"],
-            data={"id": reminder["id"], "message": reminder["message"]},
-            name=f"reminder-{reminder['id']}",
-        )
+        recurrence = db.get_reminder_recurrence(reminder["id"])
+        data = {"id": reminder["id"], "message": reminder["message"], "recurrence": recurrence}
+        if recurrence == "daily":
+            local_due = due_at.astimezone(LOCAL_TIMEZONE)
+            app.job_queue.run_daily(
+                reminder_callback, time=local_due.timetz(), chat_id=reminder["chat_id"],
+                data=data, name=f"reminder-{reminder['id']}",
+            )
+        else:
+            app.job_queue.run_once(
+                reminder_callback, when=max((due_at - now).total_seconds(), 1),
+                chat_id=reminder["chat_id"], data=data, name=f"reminder-{reminder['id']}",
+            )
         restored += 1
     if restored:
         logger.info("%s bekleyen hatırlatıcı yeniden yüklendi.", restored)
+
+
+async def daily_summary_callback(context: ContextTypes.DEFAULT_TYPE):
+    summary = await build_today_summary(context.job.data["user_id"])
+    await context.bot.send_message(
+        chat_id=context.job.chat_id, text=summary, parse_mode="Markdown",
+        reply_markup=get_main_keyboard(),
+    )
+
+
+def restore_daily_summaries(app):
+    for item in db.get_daily_summaries():
+        hour, minute = map(int, item["send_time"].split(":"))
+        timezone_info = ZoneInfo(item["timezone"])
+        send_at = datetime.now(timezone_info).replace(hour=hour, minute=minute, second=0, microsecond=0).timetz()
+        app.job_queue.run_daily(
+            daily_summary_callback, time=send_at, chat_id=item["chat_id"],
+            data={"user_id": item["user_id"]}, name=f"daily-summary-{item['user_id']}",
+        )
 
 
 async def initialize_app(app):
@@ -441,19 +505,55 @@ async def initialize_app(app):
         BotCommand("menu", "Ana paneli aç"),
         BotCommand("bugun", "Kişisel günlük özetini göster"),
         BotCommand("gorev", "Yeni görev ekle"),
+        BotCommand("gorevdetay", "Öncelikli ve tarihli görev ekle"),
         BotCommand("gorevler", "Görevlerini görüntüle"),
         BotCommand("not", "Yeni not kaydet"),
         BotCommand("notlar", "Notlarını görüntüle"),
         BotCommand("hatirlat", "Dakika bazlı hatırlatıcı kur"),
         BotCommand("hatirlaticilar", "Bekleyen hatırlatıcılarını görüntüle"),
+        BotCommand("tekrarla", "Her gün tekrarlanan hatırlatıcı kur"),
         BotCommand("hava", "Şehir hava durumunu göster"),
         BotCommand("sehir", "Varsayılan şehrini değiştir"),
         BotCommand("piyasa", "Döviz ve kripto özetini göster"),
         BotCommand("ara", "Görev ve notlarında ara"),
         BotCommand("temizle", "Tamamlanan görevleri temizle"),
+        BotCommand("aliskanlik", "Alışkanlık ekle veya takip et"),
+        BotCommand("harcama", "Yeni harcama kaydet"),
+        BotCommand("harcamalar", "Harcama özetini göster"),
+        BotCommand("disaaktar", "Kişisel verilerini indir"),
+        BotCommand("etkinlik", "Takvime etkinlik ekle"),
+        BotCommand("takvim", "Yaklaşan etkinlikleri göster"),
+        BotCommand("takvimindir", "Takvimi ICS olarak indir"),
+        BotCommand("durum", "Botun çalışma durumunu göster"),
+        BotCommand("ozetsaat", "Otomatik günlük özet saatini ayarla"),
+        BotCommand("verilerimisil", "Tüm kişisel verilerini sil"),
         BotCommand("help", "Yardım merkezini aç"),
     ])
     await restore_reminders(app)
+    restore_daily_summaries(app)
+
+
+async def daily_summary_time_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    for job in context.job_queue.get_jobs_by_name(f"daily-summary-{user_id}"):
+        job.schedule_removal()
+    value = " ".join(context.args).strip().lower()
+    if value in {"kapat", "off", "iptal"}:
+        db.delete_daily_summary(user_id)
+        await update.message.reply_text("Günlük otomatik özet kapatıldı.")
+        return
+    import re
+    if not re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", value):
+        await update.message.reply_text("Örnek: `/ozetsaat 08:00` veya `/ozetsaat kapat`", parse_mode="Markdown")
+        return
+    db.set_daily_summary(user_id, update.effective_chat.id, value, str(LOCAL_TIMEZONE))
+    hour, minute = map(int, value.split(":"))
+    send_at = datetime.now(LOCAL_TIMEZONE).replace(hour=hour, minute=minute, second=0, microsecond=0).timetz()
+    context.job_queue.run_daily(
+        daily_summary_callback, time=send_at, chat_id=update.effective_chat.id,
+        data={"user_id": user_id}, name=f"daily-summary-{user_id}",
+    )
+    await update.message.reply_text(f"☀️ Günlük özet saati {value} olarak ayarlandı.")
 
 
 def schedule_reminder(context, user_id, chat_id, minutes, message):
@@ -468,6 +568,30 @@ def schedule_reminder(context, user_id, chat_id, minutes, message):
         name=f"reminder-{reminder_id}",
     )
     return reminder_id
+
+
+async def recurring_reminder_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    raw = " ".join(context.args).strip()
+    if "|" not in raw:
+        await update.message.reply_text("Örnek: `/tekrarla 08:00 | Su iç`", parse_mode="Markdown")
+        return
+    time_text, message = (part.strip() for part in raw.split("|", 1))
+    parsed = parse_datetime(time_text)
+    if not parsed or not message:
+        await update.message.reply_text("Saat veya mesaj anlaşılamadı.")
+        return
+    now_local = datetime.now(LOCAL_TIMEZONE)
+    first = now_local.replace(hour=parsed.hour, minute=parsed.minute, second=0, microsecond=0)
+    if first <= now_local:
+        first += timedelta(days=1)
+    reminder_id = db.add_reminder(update.effective_user.id, update.effective_chat.id, message, first)
+    db.set_reminder_recurrence(reminder_id, update.effective_user.id, "daily")
+    context.job_queue.run_daily(
+        reminder_callback, time=first.timetz(), chat_id=update.effective_chat.id,
+        data={"id": reminder_id, "message": message, "recurrence": "daily"},
+        name=f"reminder-{reminder_id}",
+    )
+    await update.message.reply_text(f"🔁 Her gün {first.strftime('%H:%M')} için hatırlatıcı kuruldu.")
 
 
 async def remind_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -542,6 +666,159 @@ async def list_reminders_command(update: Update, context: ContextTypes.DEFAULT_T
     await show_panel(update, text, InlineKeyboardMarkup(keyboard))
 
 
+async def habits_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if context.args and context.args[0].lower() == "ekle":
+        name = " ".join(context.args[1:]).strip()
+        if not name:
+            await update.message.reply_text("Örnek: `/aliskanlik ekle Kitap oku`", parse_mode="Markdown")
+            return
+        db.add_habit(update.effective_user.id, name[:200])
+    await show_habits(update)
+
+
+async def show_habits(update):
+    habits = db.get_habits(update.effective_user.id)
+    if not habits:
+        await show_panel(
+            update,
+            "🎯 *Alışkanlıkların*\n━━━━━━━━━━━━━━━━━━━━━\nHenüz kayıt yok.\n\n"
+            "`/aliskanlik ekle Kitap oku`",
+            get_back_keyboard(),
+        )
+        return
+    text = "🎯 *Bugünkü alışkanlıkların*\n━━━━━━━━━━━━━━━━━━━━━\n"
+    keyboard = []
+    for habit in habits:
+        icon = "✅" if habit["done_today"] else "⬜"
+        text += f"\n{icon} {escape_markdown(habit['name'])} · _{habit['total_days']} gün_"
+        if not habit["done_today"]:
+            keyboard.append([InlineKeyboardButton(
+                f"✓ {habit['name'][:30]}", callback_data=f"check_habit_{habit['id']}"
+            )])
+    keyboard.append([InlineKeyboardButton("‹ Ana menü", callback_data="btn_home")])
+    await show_panel(update, text, InlineKeyboardMarkup(keyboard))
+
+
+async def expense_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if len(context.args) < 2:
+        await update.message.reply_text(
+            "Örnek: `/harcama 250 market Haftalık alışveriş`", parse_mode="Markdown"
+        )
+        return
+    try:
+        amount = float(context.args[0].replace(",", "."))
+        if amount <= 0:
+            raise ValueError
+    except ValueError:
+        await update.message.reply_text("Tutar pozitif bir sayı olmalı.")
+        return
+    category = context.args[1].lower()[:50]
+    note = " ".join(context.args[2:])[:500]
+    db.add_expense(update.effective_user.id, amount, category, note)
+    await update.message.reply_text(
+        f"✅ *Harcama kaydedildi*\n{amount:,.2f} TL · {escape_markdown(category)}",
+        parse_mode="Markdown",
+        reply_markup=get_main_keyboard(),
+    )
+
+
+async def expenses_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    summary = db.get_expense_summary(update.effective_user.id)
+    if not summary:
+        text = "💳 *Harcamaların*\n━━━━━━━━━━━━━━━━━━━━━\nHenüz kayıt yok.\n\n`/harcama 250 market`"
+    else:
+        total = sum(float(row["total"]) for row in summary if row["currency"] == "TRY")
+        lines = [f"• {escape_markdown(row['category'])}: *{float(row['total']):,.2f} {row['currency']}*" for row in summary]
+        text = f"💳 *Harcama özeti*\n━━━━━━━━━━━━━━━━━━━━━\nToplam: *{total:,.2f} TL*\n\n" + "\n".join(lines)
+    await show_panel(update, text, get_back_keyboard())
+
+
+def _json_default(value):
+    if isinstance(value, (datetime, date)):
+        return value.isoformat()
+    return str(value)
+
+
+async def export_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    payload = db.export_user_data(update.effective_user.id)
+    content = json.dumps(payload, ensure_ascii=False, indent=2, default=_json_default).encode("utf-8")
+    await update.message.reply_document(
+        document=InputFile(BytesIO(content), filename="telegram-asistan-verilerim.json"),
+        caption="📦 Verilerinin dışa aktarımı hazır.",
+    )
+
+
+async def delete_data_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    keyboard = InlineKeyboardMarkup([[
+        InlineKeyboardButton("Tüm verilerimi sil", callback_data="confirm_delete_all_data"),
+        InlineKeyboardButton("Vazgeç", callback_data="btn_home"),
+    ]])
+    await update.message.reply_text(
+        "⚠️ *Tüm notların, görevlerin, hatırlatıcıların, alışkanlıkların, "
+        "harcamaların ve etkinliklerin kalıcı olarak silinecek.*",
+        parse_mode="Markdown",
+        reply_markup=keyboard,
+    )
+
+
+async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    storage = "PostgreSQL" if db.DATABASE_URL else "geçici SQLite"
+    mode = "webhook" if get_webhook_config() else "polling"
+    await update.message.reply_text(
+        f"🟢 Bot çalışıyor\n• Bağlantı: {mode}\n• Veri deposu: {storage}\n"
+        f"• Saat: {datetime.now(LOCAL_TIMEZONE).strftime('%d.%m.%Y %H:%M')}"
+    )
+
+
+async def event_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    raw = " ".join(context.args).strip()
+    if "|" not in raw:
+        await update.message.reply_text(
+            "Örnek: `/etkinlik yarın 14:00 | Doktor randevusu`", parse_mode="Markdown"
+        )
+        return
+    date_text, title = (part.strip() for part in raw.split("|", 1))
+    starts_at = parse_datetime(date_text)
+    if not starts_at or not title:
+        await update.message.reply_text("Tarih veya etkinlik adı anlaşılamadı.")
+        return
+    db.add_calendar_event(update.effective_user.id, title[:300], starts_at)
+    local_time = starts_at.astimezone(LOCAL_TIMEZONE)
+    await update.message.reply_text(
+        f"📅 *Etkinlik eklendi*\n{escape_markdown(title[:300])}\n"
+        f"_{local_time.strftime('%d.%m.%Y · %H:%M')}_",
+        parse_mode="Markdown",
+    )
+
+
+async def calendar_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    events = db.get_upcoming_events(update.effective_user.id)
+    if not events:
+        text = "📅 *Takvimin*\n━━━━━━━━━━━━━━━━━━━━━\nYaklaşan etkinlik yok.\n\n`/etkinlik yarın 14:00 | Doktor`"
+    else:
+        lines = []
+        for event in events:
+            starts_at = _as_utc(event["starts_at"]).astimezone(LOCAL_TIMEZONE)
+            lines.append(f"• *{escape_markdown(event['title'])}*\n  _{starts_at.strftime('%d.%m.%Y · %H:%M')}_")
+        text = "📅 *Yaklaşan etkinlikler*\n━━━━━━━━━━━━━━━━━━━━━\n\n" + "\n\n".join(lines)
+    await show_panel(update, text, get_back_keyboard())
+
+
+async def calendar_export_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    events = db.get_upcoming_events(update.effective_user.id, datetime(1970, 1, 1, tzinfo=timezone.utc), 1000)
+    lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Telegram Assistant//TR"]
+    for event in events:
+        start = _as_utc(event["starts_at"]).strftime("%Y%m%dT%H%M%SZ")
+        title = str(event["title"]).replace("\\", "\\\\").replace(",", "\\,").replace(";", "\\;")
+        lines.extend(["BEGIN:VEVENT", f"UID:{event['id']}@telegram-assistant", f"DTSTART:{start}", f"SUMMARY:{title}", "END:VEVENT"])
+    lines.append("END:VCALENDAR")
+    content = "\r\n".join(lines).encode("utf-8")
+    await update.message.reply_document(
+        document=InputFile(BytesIO(content), filename="telegram-asistan-takvim.ics"),
+        caption="📅 Takvim dosyan hazır. Google veya Outlook Takvim'e aktarabilirsin.",
+    )
+
+
 # ─────────────────────────────────────────
 # BUTON ETKİLEŞİMLERİ (CALLBACK QUERY)
 # ─────────────────────────────────────────
@@ -582,6 +859,12 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif data == "btn_reminders":
         await list_reminders_command(update, context)
+
+    elif data == "btn_habits":
+        await show_habits(update)
+
+    elif data == "btn_expenses":
+        await expenses_command(update, context)
 
     elif data == "btn_remind_help":
         context.user_data["pending_action"] = "reminder"
@@ -690,6 +973,20 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 job.schedule_removal()
         await list_reminders_command(update, context)
 
+    elif data.startswith("check_habit_"):
+        habit_id = int(data.replace("check_habit_", ""))
+        db.check_habit(habit_id, query.from_user.id)
+        await show_habits(update)
+
+    elif data == "confirm_delete_all_data":
+        user_id = query.from_user.id
+        for reminder in db.get_pending_reminders(user_id):
+            for job in context.job_queue.get_jobs_by_name(f"reminder-{reminder['id']}"):
+                job.schedule_removal()
+        db.delete_user_data(user_id)
+        context.user_data.clear()
+        await show_panel(update, "✅ Tüm kişisel verilerin silindi.", get_main_keyboard())
+
 
 # ─── SERBEST METİN YANITLAYICI ───
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -714,8 +1011,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 InlineKeyboardButton("⌂ Menü", callback_data="btn_home"),
             ]]),
         )
-        return
-
     if pending_action == "note":
         context.user_data.pop("pending_action", None)
         db.add_note(update.effective_user.id, raw_text[:2000])
@@ -755,6 +1050,47 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
+    if "hatırlat" in text or "hatirlat" in text:
+        parsed_datetime = extract_future_datetime(raw_text)
+        if parsed_datetime:
+            due_at, reminder_text = parsed_datetime
+            if reminder_text and due_at > datetime.now(due_at.tzinfo):
+                minutes = (due_at.astimezone(timezone.utc) - datetime.now(timezone.utc)).total_seconds() / 60
+                schedule_reminder(context, update.effective_user.id, update.effective_chat.id, minutes, reminder_text)
+                await update.message.reply_text(
+                    f"⏰ *Hatırlatıcı kuruldu*\n{escape_markdown(reminder_text)}\n"
+                    f"_{due_at.astimezone(LOCAL_TIMEZONE).strftime('%d.%m.%Y · %H:%M')}_",
+                    parse_mode="Markdown",
+                )
+                return
+
+    if text.startswith("alışkanlık ekle ") or text.startswith("aliskanlik ekle "):
+        name = raw_text.split(" ", 2)[2].strip()
+        db.add_habit(update.effective_user.id, name[:200])
+        await update.message.reply_text(f"🎯 Alışkanlık eklendi: {name[:200]}")
+        return
+
+    if any(marker in text for marker in [" tl ", " try ", "₺"]):
+        expense = parse_expense_text(raw_text)
+        if expense:
+            db.add_expense(update.effective_user.id, **expense)
+            await update.message.reply_text(
+                f"💳 {expense['amount']:,.2f} TL · {expense['category']} kaydedildi."
+            )
+            return
+
+    if "takvime ekle" in text:
+        parsed_event = extract_future_datetime(raw_text)
+        if parsed_event:
+            starts_at, title = parsed_event
+            if title:
+                db.add_calendar_event(update.effective_user.id, title[:300], starts_at)
+                await update.message.reply_text(
+                    f"📅 Etkinlik eklendi: {title[:300]} · "
+                    f"{starts_at.astimezone(LOCAL_TIMEZONE).strftime('%d.%m.%Y %H:%M')}"
+                )
+                return
+
     if any(w in text for w in ["hava", "hava durumu", "hava nasıl"]):
         await weather_command(update, context)
     elif any(w in text for w in ["dolar", "euro", "piyasa", "kurlar", "borsa", "bitcoin", "btc"]):
@@ -773,6 +1109,52 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"Hızlı işlem yapmak için aşağıdaki menüyü kullanabilir veya `/help` yazabilirsin.",
             reply_markup=get_main_keyboard()
         )
+
+
+async def handle_web_app_data(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        payload = json.loads(update.effective_message.web_app_data.data)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        await update.effective_message.reply_text("Panel isteği anlaşılamadı.")
+        return
+    action = payload.get("action")
+    if action == "tasks":
+        await list_tasks_command(update, context)
+    elif action == "habits":
+        await show_habits(update)
+    elif action == "expenses":
+        await expenses_command(update, context)
+    elif action == "today":
+        await today_command(update, context)
+    else:
+        await update.effective_message.reply_text("Bilinmeyen panel işlemi.")
+
+
+async def error_handler(update, context):
+    logger.exception("Telegram güncellemesi işlenirken hata oluştu", exc_info=context.error)
+    message = getattr(update, "effective_message", None)
+    if message:
+        try:
+            await message.reply_text("⚠️ İşlem tamamlanamadı. Lütfen biraz sonra tekrar dene.")
+        except Exception:
+            logger.exception("Kullanıcıya hata mesajı gönderilemedi")
+    if ADMIN_CHAT_ID:
+        try:
+            await context.bot.send_message(
+                int(ADMIN_CHAT_ID),
+                f"🚨 Bot hatası: {type(context.error).__name__}",
+            )
+        except Exception:
+            logger.exception("Yönetici hata bildirimi gönderilemedi")
+
+
+async def access_guard(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not ALLOWED_USER_IDS or not update.effective_user:
+        return
+    if update.effective_user.id not in ALLOWED_USER_IDS:
+        if update.effective_message:
+            await update.effective_message.reply_text("Bu bot özel kullanım için yapılandırılmış.")
+        raise ApplicationHandlerStop
 
 
 # ─────────────────────────────────────────
@@ -800,6 +1182,7 @@ def main():
     app = ApplicationBuilder().token(TOKEN).post_init(initialize_app).build()
 
     # Komut yöneticileri
+    app.add_handler(TypeHandler(Update, access_guard), group=-1)
     app.add_handler(CommandHandler("start", start_command))
     app.add_handler(CommandHandler("menu", menu_command))
     app.add_handler(CommandHandler("help", help_command))
@@ -809,16 +1192,30 @@ def main():
     app.add_handler(CommandHandler("piyasa", finance_command))
     app.add_handler(CommandHandler("bugun", today_command))
     app.add_handler(CommandHandler("gorev", add_task_command))
+    app.add_handler(CommandHandler("gorevdetay", add_detailed_task_command))
     app.add_handler(CommandHandler("gorevler", list_tasks_command))
     app.add_handler(CommandHandler("temizle", clear_completed_command))
+    app.add_handler(CommandHandler("aliskanlik", habits_command))
+    app.add_handler(CommandHandler("harcama", expense_command))
+    app.add_handler(CommandHandler("harcamalar", expenses_command))
+    app.add_handler(CommandHandler("disaaktar", export_command))
+    app.add_handler(CommandHandler("etkinlik", event_command))
+    app.add_handler(CommandHandler("takvim", calendar_command))
+    app.add_handler(CommandHandler("takvimindir", calendar_export_command))
+    app.add_handler(CommandHandler("durum", status_command))
+    app.add_handler(CommandHandler("ozetsaat", daily_summary_time_command))
+    app.add_handler(CommandHandler("verilerimisil", delete_data_command))
     app.add_handler(CommandHandler("not", add_note_command))
     app.add_handler(CommandHandler("notlar", list_notes_command))
     app.add_handler(CommandHandler("hatirlat", remind_command))
     app.add_handler(CommandHandler("hatirlaticilar", list_reminders_command))
+    app.add_handler(CommandHandler("tekrarla", recurring_reminder_command))
 
     # Callback & Metin yöneticileri
     app.add_handler(CallbackQueryHandler(handle_callback))
+    app.add_handler(MessageHandler(filters.StatusUpdate.WEB_APP_DATA, handle_web_app_data))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    app.add_error_handler(error_handler)
 
     webhook = get_webhook_config()
     if webhook:

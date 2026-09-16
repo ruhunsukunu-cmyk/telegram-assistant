@@ -21,6 +21,8 @@ class UiTests(unittest.TestCase):
                 "btn_finance",
                 "btn_tasks",
                 "btn_notes",
+                "btn_habits",
+                "btn_expenses",
                 "btn_quick_add",
                 "btn_reminders",
                 "btn_help",

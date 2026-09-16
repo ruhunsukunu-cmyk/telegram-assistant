@@ -81,6 +81,43 @@ class DatabaseTests(unittest.TestCase):
         self.assertEqual([row["title"] for row in database.get_tasks(1)], ["Bekleyen görev"])
         self.assertEqual(len(database.get_tasks(2)), 1)
 
+    def test_extended_daily_life_data(self):
+        from datetime import datetime, timedelta, timezone
+
+        task_id = database.add_task(1, "Raporu bitir")
+        database.set_task_metadata(task_id, 1, "high", datetime.now(timezone.utc) + timedelta(days=1))
+        self.assertEqual(database.get_enriched_tasks(1)[0]["priority"], "high")
+
+        habit_id = database.add_habit(1, "Kitap oku")
+        self.assertTrue(database.check_habit(habit_id, 1, "2026-09-16"))
+        self.assertEqual(database.get_habits(1, "2026-09-16")[0]["done_today"], 1)
+
+        database.add_expense(1, 250, "market", "haftalık alışveriş")
+        self.assertEqual(float(database.get_expense_summary(1)[0]["total"]), 250)
+
+        database.add_calendar_event(1, "Doktor", datetime.now(timezone.utc) + timedelta(days=2))
+        self.assertEqual(database.get_upcoming_events(1)[0]["title"], "Doktor")
+
+        exported = database.export_user_data(1)
+        self.assertEqual(len(exported["tasks"]), 1)
+        self.assertEqual(len(exported["expenses"]), 1)
+
+        reminder_id = database.add_reminder(1, 99, "Günlük su", datetime.now(timezone.utc) + timedelta(hours=1))
+        database.set_reminder_recurrence(reminder_id, 1, "daily")
+        self.assertEqual(database.get_reminder_recurrence(reminder_id), "daily")
+
+        database.set_daily_summary(1, 99, "08:00")
+        self.assertEqual(database.get_daily_summaries()[0]["send_time"], "08:00")
+
+    def test_delete_user_data_removes_owned_records(self):
+        database.add_note(1, "özel not")
+        database.add_task(1, "özel görev")
+        database.add_note(2, "korunacak not")
+        database.delete_user_data(1)
+        self.assertEqual(database.get_notes(1), [])
+        self.assertEqual(database.get_tasks(1), [])
+        self.assertEqual(len(database.get_notes(2)), 1)
+
 
 if __name__ == "__main__":
     unittest.main()

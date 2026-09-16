@@ -2,3 +2,4 @@ python-telegram-bot[job-queue,webhooks]==21.10
 python-dotenv==1.0.1
 httpx==0.28.1
 psycopg[binary]==3.2.10
+dateparser==1.2.2

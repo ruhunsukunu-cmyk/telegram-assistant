@@ -64,4 +64,20 @@ Telegram'da kendi botunuza gidin ve **/start** yazarak asistanınızı kullanmay
 | `/hatirlaticilar` | Bekleyen hatırlatıcıları listeler ve iptal ettirir | `/hatirlaticilar` |
 | `/ara <metin>` | Görev ve notlarda birlikte arama yapar | `/ara toplantı` |
 | `/temizle` | Tamamlanan görevleri onayla topluca siler | `/temizle` |
+| `/gorevdetay` | Öncelikli ve tarihli görev ekler | `/gorevdetay yüksek \| yarın 18:00 \| Rapor` |
+| `/tekrarla` | Her gün tekrarlanan hatırlatıcı kurar | `/tekrarla 08:00 \| Su iç` |
+| `/ozetsaat` | Otomatik günlük özet saatini ayarlar | `/ozetsaat 08:00` |
+| `/aliskanlik` | Alışkanlık ekler ve günlük takip eder | `/aliskanlik ekle Kitap oku` |
+| `/harcama` | Harcama kaydeder | `/harcama 250 market` |
+| `/harcamalar` | Kategori bazlı harcama özetini gösterir | `/harcamalar` |
+| `/etkinlik` | Yerel takvime etkinlik ekler | `/etkinlik yarın 14:00 \| Doktor` |
+| `/takvimindir` | Takvimi Google/Outlook uyumlu ICS olarak indirir | `/takvimindir` |
+| `/disaaktar` | Kişisel verileri JSON olarak indirir | `/disaaktar` |
+| `/verilerimisil` | Tüm kişisel verileri onayla siler | `/verilerimisil` |
+
+Doğal dil örnekleri: `yarın saat 10 doktoru hatırlat`, `250 TL market haftalık alışveriş`, `alışkanlık ekle Kitap oku`.
+
+## Mini App
+
+`miniapp/index.html` statik bir HTTPS adresinde yayınlanıp `MINI_APP_URL` ortam değişkenine yazıldığında ana menüde görsel panel açılır. Panel Bugün, Görevler, Alışkanlıklar ve Harcamalar ekranlarını Telegram botuna bağlar.
 | `/help` | Tüm komutları ve yardım rehberini gösterir | `/help` |

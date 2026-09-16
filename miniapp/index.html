@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Kişisel Asistan</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <style>
+    :root{font-family:Inter,system-ui,sans-serif;color-scheme:light dark}
+    *{box-sizing:border-box} body{margin:0;background:var(--tg-theme-bg-color,#10131a);color:var(--tg-theme-text-color,#f7f8fa)}
+    main{max-width:560px;margin:auto;padding:24px 18px}.hero{padding:22px;border-radius:24px;background:linear-gradient(135deg,#5b5fe9,#8c5cff);box-shadow:0 16px 40px #0003}
+    h1{margin:0 0 8px;font-size:26px}.hero p{margin:0;opacity:.86}.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:18px}
+    button{border:0;border-radius:18px;padding:20px 12px;background:var(--tg-theme-secondary-bg-color,#1b202b);color:inherit;text-align:left;font:inherit;cursor:pointer}
+    button span{display:block;font-size:27px;margin-bottom:14px}button strong{font-size:15px}.wide{grid-column:1/-1}
+    footer{text-align:center;opacity:.55;font-size:12px;margin-top:24px}
+  </style>
+</head>
+<body>
+<main>
+  <section class="hero"><h1>Bugünün kontrolü sende</h1><p>Asistanına neyi açmak istediğini söyle.</p></section>
+  <section class="grid">
+    <button data-action="today" class="wide"><span>☀️</span><strong>Bugünün özeti</strong></button>
+    <button data-action="tasks"><span>📋</span><strong>Görevler</strong></button>
+    <button data-action="habits"><span>🎯</span><strong>Alışkanlıklar</strong></button>
+    <button data-action="expenses" class="wide"><span>💳</span><strong>Harcama özeti</strong></button>
+  </section>
+  <footer>Telegram Kişisel Asistan</footer>
+</main>
+<script>
+  const app=window.Telegram.WebApp; app.ready(); app.expand();
+  document.querySelectorAll('[data-action]').forEach(button=>button.addEventListener('click',()=>{
+    app.sendData(JSON.stringify({action:button.dataset.action})); app.close();
+  }));
+</script>
+</body>
+</html>

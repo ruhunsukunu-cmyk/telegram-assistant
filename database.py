@@ -50,6 +50,14 @@ def init_db():
         cursor.execute(f"CREATE TABLE IF NOT EXISTS tasks (id {id_column}, user_id BIGINT NOT NULL, title TEXT NOT NULL, is_done INTEGER DEFAULT 0, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)")
         cursor.execute(f"CREATE TABLE IF NOT EXISTS reminders (id {id_column}, user_id BIGINT NOT NULL, chat_id BIGINT NOT NULL, message TEXT NOT NULL, due_at TIMESTAMP NOT NULL, sent_at TIMESTAMP NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)")
         cursor.execute("CREATE TABLE IF NOT EXISTS user_settings (user_id BIGINT PRIMARY KEY, default_city TEXT NOT NULL)")
+        cursor.execute("CREATE TABLE IF NOT EXISTS task_metadata (task_id BIGINT PRIMARY KEY, user_id BIGINT NOT NULL, priority TEXT NOT NULL DEFAULT 'normal', due_at TIMESTAMP NULL)")
+        cursor.execute("CREATE TABLE IF NOT EXISTS reminder_rules (reminder_id BIGINT PRIMARY KEY, user_id BIGINT NOT NULL, recurrence TEXT NULL)")
+        cursor.execute(f"CREATE TABLE IF NOT EXISTS habits (id {id_column}, user_id BIGINT NOT NULL, name TEXT NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)")
+        cursor.execute("CREATE TABLE IF NOT EXISTS habit_logs (habit_id BIGINT NOT NULL, user_id BIGINT NOT NULL, log_date DATE NOT NULL, PRIMARY KEY (habit_id, log_date))")
+        cursor.execute(f"CREATE TABLE IF NOT EXISTS expenses (id {id_column}, user_id BIGINT NOT NULL, amount NUMERIC NOT NULL, currency TEXT NOT NULL DEFAULT 'TRY', category TEXT NOT NULL, note TEXT, spent_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)")
+        cursor.execute(f"CREATE TABLE IF NOT EXISTS calendar_events (id {id_column}, user_id BIGINT NOT NULL, title TEXT NOT NULL, starts_at TIMESTAMP NOT NULL, ends_at TIMESTAMP NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)")
+        cursor.execute("CREATE TABLE IF NOT EXISTS user_preferences (user_id BIGINT PRIMARY KEY, timezone TEXT NOT NULL DEFAULT 'Europe/Istanbul', summary_time TEXT NULL)")
+        cursor.execute("CREATE TABLE IF NOT EXISTS daily_summaries (user_id BIGINT PRIMARY KEY, chat_id BIGINT NOT NULL, send_time TEXT NOT NULL, timezone TEXT NOT NULL DEFAULT 'Europe/Istanbul')")
         conn.commit()
 
 
@@ -129,6 +137,24 @@ def cancel_reminder(reminder_id, user_id):
     )
 
 
+def set_reminder_recurrence(reminder_id, user_id, recurrence):
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            _sql("INSERT INTO reminder_rules (reminder_id, user_id, recurrence) VALUES (?, ?, ?) ON CONFLICT(reminder_id) DO UPDATE SET recurrence = excluded.recurrence"),
+            (reminder_id, user_id, recurrence),
+        )
+        conn.commit()
+
+
+def get_reminder_recurrence(reminder_id):
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(_sql("SELECT recurrence FROM reminder_rules WHERE reminder_id = ?"), (reminder_id,))
+        row = cursor.fetchone()
+        return row["recurrence"] if row else None
+
+
 def set_default_city(user_id, city):
     city = city.strip()[:100]
     with get_db() as conn:
@@ -173,6 +199,147 @@ def search_user_content(user_id, term, limit=10):
         )
         results.extend({"type": "note", **dict(row)} for row in cursor.fetchall())
     return results[:limit]
+
+
+def set_task_metadata(task_id, user_id, priority="normal", due_at=None):
+    due_value = _datetime_value(due_at) if due_at else None
+    with get_db() as conn:
+        cursor = conn.cursor()
+        sql = (
+            "INSERT INTO task_metadata (task_id, user_id, priority, due_at) VALUES (?, ?, ?, ?) "
+            "ON CONFLICT(task_id) DO UPDATE SET priority = excluded.priority, due_at = excluded.due_at"
+        )
+        cursor.execute(_sql(sql), (task_id, user_id, priority, due_value))
+        conn.commit()
+
+
+def get_enriched_tasks(user_id):
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(_sql("""
+            SELECT t.id, t.title, t.is_done, t.created_at,
+                   COALESCE(m.priority, 'normal') AS priority, m.due_at
+            FROM tasks t LEFT JOIN task_metadata m ON m.task_id = t.id
+            WHERE t.user_id = ?
+            ORDER BY t.is_done ASC,
+                     CASE COALESCE(m.priority, 'normal') WHEN 'high' THEN 0 WHEN 'normal' THEN 1 ELSE 2 END,
+                     m.due_at ASC, t.id DESC
+        """), (user_id,))
+        return cursor.fetchall()
+
+
+def add_habit(user_id, name):
+    with get_db() as conn:
+        return _insert_and_get_id(conn, "INSERT INTO habits (user_id, name) VALUES (?, ?)", (user_id, name.strip()))
+
+
+def get_habits(user_id, day=None):
+    day = day or datetime.now(timezone.utc).date().isoformat()
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(_sql("""
+            SELECT h.id, h.name,
+                   CASE WHEN l.habit_id IS NULL THEN 0 ELSE 1 END AS done_today,
+                   (SELECT COUNT(*) FROM habit_logs x WHERE x.habit_id = h.id) AS total_days
+            FROM habits h LEFT JOIN habit_logs l ON l.habit_id = h.id AND l.log_date = ?
+            WHERE h.user_id = ? ORDER BY h.id
+        """), (day, user_id))
+        return cursor.fetchall()
+
+
+def check_habit(habit_id, user_id, day=None):
+    day = day or datetime.now(timezone.utc).date().isoformat()
+    with get_db() as conn:
+        cursor = conn.cursor()
+        sql = "INSERT INTO habit_logs (habit_id, user_id, log_date) SELECT ?, ?, ? WHERE EXISTS (SELECT 1 FROM habits WHERE id = ? AND user_id = ?) ON CONFLICT(habit_id, log_date) DO NOTHING"
+        cursor.execute(_sql(sql), (habit_id, user_id, day, habit_id, user_id))
+        conn.commit()
+        return cursor.rowcount > 0
+
+
+def add_expense(user_id, amount, category, note="", currency="TRY"):
+    with get_db() as conn:
+        return _insert_and_get_id(conn, "INSERT INTO expenses (user_id, amount, currency, category, note) VALUES (?, ?, ?, ?, ?)", (user_id, amount, currency, category, note.strip()))
+
+
+def get_expense_summary(user_id):
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(_sql("SELECT category, currency, SUM(amount) AS total FROM expenses WHERE user_id = ? GROUP BY category, currency ORDER BY total DESC"), (user_id,))
+        return cursor.fetchall()
+
+
+def add_calendar_event(user_id, title, starts_at, ends_at=None):
+    with get_db() as conn:
+        return _insert_and_get_id(conn, "INSERT INTO calendar_events (user_id, title, starts_at, ends_at) VALUES (?, ?, ?, ?)", (user_id, title.strip(), _datetime_value(starts_at), _datetime_value(ends_at) if ends_at else None))
+
+
+def get_upcoming_events(user_id, after=None, limit=10):
+    after = after or datetime.now(timezone.utc)
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(_sql("SELECT id, title, starts_at, ends_at FROM calendar_events WHERE user_id = ? AND starts_at >= ? ORDER BY starts_at LIMIT ?"), (user_id, _datetime_value(after), limit))
+        return cursor.fetchall()
+
+
+def export_user_data(user_id):
+    data = {}
+    with get_db() as conn:
+        cursor = conn.cursor()
+        for name, query in {
+            "notes": "SELECT id, content, created_at FROM notes WHERE user_id = ?",
+            "tasks": "SELECT id, title, is_done, created_at FROM tasks WHERE user_id = ?",
+            "reminders": "SELECT id, message, due_at, sent_at FROM reminders WHERE user_id = ?",
+            "habits": "SELECT id, name, created_at FROM habits WHERE user_id = ?",
+            "expenses": "SELECT id, amount, currency, category, note, spent_at FROM expenses WHERE user_id = ?",
+            "calendar_events": "SELECT id, title, starts_at, ends_at FROM calendar_events WHERE user_id = ?",
+        }.items():
+            cursor.execute(_sql(query), (user_id,))
+            data[name] = [dict(row) for row in cursor.fetchall()]
+    return data
+
+
+def delete_user_data(user_id):
+    """Kullanıcıya ait tüm verileri tek işlemde kaldır."""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(_sql("DELETE FROM habit_logs WHERE user_id = ?"), (user_id,))
+        cursor.execute(_sql("DELETE FROM task_metadata WHERE user_id = ?"), (user_id,))
+        cursor.execute(_sql("DELETE FROM reminder_rules WHERE user_id = ?"), (user_id,))
+        for table in ("notes", "tasks", "reminders", "habits", "expenses", "calendar_events", "user_settings", "user_preferences", "daily_summaries"):
+            cursor.execute(_sql(f"DELETE FROM {table} WHERE user_id = ?"), (user_id,))
+        conn.commit()
+
+
+def set_daily_summary(user_id, chat_id, send_time, timezone_name="Europe/Istanbul"):
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            _sql("INSERT INTO daily_summaries (user_id, chat_id, send_time, timezone) VALUES (?, ?, ?, ?) ON CONFLICT(user_id) DO UPDATE SET chat_id = excluded.chat_id, send_time = excluded.send_time, timezone = excluded.timezone"),
+            (user_id, chat_id, send_time, timezone_name),
+        )
+        conn.commit()
+
+
+def delete_daily_summary(user_id):
+    return _change("DELETE FROM daily_summaries WHERE user_id = ?", (user_id,))
+
+
+def get_daily_summaries():
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT user_id, chat_id, send_time, timezone FROM daily_summaries")
+        return cursor.fetchall()
+
+
+def _datetime_value(value):
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return value
+    if value.tzinfo:
+        value = value.astimezone(timezone.utc).replace(tzinfo=None)
+    return value if _uses_postgres() else value.isoformat(sep=" ")
 
 
 def _change(query, params):
