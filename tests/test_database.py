@@ -62,6 +62,14 @@ class DatabaseTests(unittest.TestCase):
         database.set_default_city(1, "İzmir")
         self.assertEqual(database.get_default_city(1), "İzmir")
 
+    def test_search_is_scoped_to_user(self):
+        database.add_task(1, "Doktor randevusu al")
+        database.add_note(1, "Doktor telefon numarası")
+        database.add_note(2, "Doktor özel notu")
+        results = database.search_user_content(1, "Doktor")
+        self.assertEqual(len(results), 2)
+        self.assertEqual({item["type"] for item in results}, {"task", "note"})
+
 
 if __name__ == "__main__":
     unittest.main()

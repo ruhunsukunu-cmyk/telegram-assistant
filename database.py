@@ -148,6 +148,25 @@ def get_default_city(user_id, fallback="Istanbul"):
         return row["default_city"] if row else fallback
 
 
+def search_user_content(user_id, term, limit=10):
+    pattern = f"%{term.strip()}%"
+    operator = "ILIKE" if _uses_postgres() else "LIKE"
+    results = []
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            _sql(f"SELECT id, title AS content, is_done FROM tasks WHERE user_id = ? AND title {operator} ? ORDER BY id DESC LIMIT ?"),
+            (user_id, pattern, limit),
+        )
+        results.extend({"type": "task", **dict(row)} for row in cursor.fetchall())
+        cursor.execute(
+            _sql(f"SELECT id, content FROM notes WHERE user_id = ? AND content {operator} ? ORDER BY id DESC LIMIT ?"),
+            (user_id, pattern, limit),
+        )
+        results.extend({"type": "note", **dict(row)} for row in cursor.fetchall())
+    return results[:limit]
+
+
 def _change(query, params):
     with get_db() as conn:
         cursor = conn.cursor()

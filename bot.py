@@ -201,6 +201,34 @@ async def city_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    term = " ".join(context.args).strip()
+    if len(term) < 2:
+        await update.message.reply_text(
+            "🔎 Aramak istediğin en az iki harfi yaz.\nÖrnek: `/ara toplantı`",
+            parse_mode="Markdown",
+        )
+        return
+    results = db.search_user_content(update.effective_user.id, term)
+    if not results:
+        await update.message.reply_text(
+            f"🔎 *{escape_markdown(term)}* için görev veya not bulunamadı.",
+            parse_mode="Markdown",
+            reply_markup=get_main_keyboard(),
+        )
+        return
+    lines = []
+    for item in results:
+        icon = "✅" if item["type"] == "task" and item.get("is_done") else "📋" if item["type"] == "task" else "📝"
+        lines.append(f"{icon} {escape_markdown(item['content'])}")
+    await update.message.reply_text(
+        f"🔎 *Arama sonuçları* · _{len(results)} kayıt_\n━━━━━━━━━━━━━━━━━━━━━\n\n"
+        + "\n\n".join(lines),
+        parse_mode="Markdown",
+        reply_markup=get_main_keyboard(),
+    )
+
+
 # ─── FİNANS & KURLAR ───
 async def finance_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """/piyasa komutu"""
@@ -737,6 +765,7 @@ def main():
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("hava", weather_command))
     app.add_handler(CommandHandler("sehir", city_command))
+    app.add_handler(CommandHandler("ara", search_command))
     app.add_handler(CommandHandler("piyasa", finance_command))
     app.add_handler(CommandHandler("bugun", today_command))
     app.add_handler(CommandHandler("gorev", add_task_command))
