@@ -52,8 +52,20 @@ class UiTests(unittest.TestCase):
         self.assertLess(len(bot.INTRO_TEXT), 700)
 
     def test_release_notes_explain_current_version(self):
-        self.assertIn("v2.4", bot.RELEASE_NOTES_TEXT)
+        self.assertIn("v2.5", bot.RELEASE_NOTES_TEXT)
         self.assertIn("Güncelleme notları", bot.RELEASE_NOTES_TEXT)
+
+    def test_calendar_reminders_are_due_at_24_and_2_hours(self):
+        self.assertEqual(bot.due_calendar_reminder_offset(24 * 60 * 60), 1440)
+        self.assertEqual(bot.due_calendar_reminder_offset(24 * 60 * 60 - 90), 1440)
+        self.assertEqual(bot.due_calendar_reminder_offset(2 * 60 * 60), 120)
+        self.assertEqual(bot.due_calendar_reminder_offset(2 * 60 * 60 - 90), 120)
+        self.assertIsNone(bot.due_calendar_reminder_offset(10 * 60 * 60))
+        self.assertIsNone(bot.due_calendar_reminder_offset(2 * 60 * 60 + 1))
+
+    def test_calendar_reminder_labels_are_readable(self):
+        self.assertEqual(bot.calendar_offset_label(1440), "24 saat")
+        self.assertEqual(bot.calendar_offset_label(120), "2 saat")
 
     def test_all_user_routine_jobs_are_removed_together(self):
         job_queue = MagicMock()

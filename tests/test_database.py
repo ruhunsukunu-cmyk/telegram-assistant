@@ -137,6 +137,13 @@ class DatabaseTests(unittest.TestCase):
         self.assertFalse(database.mark_calendar_notification_sent("event-key", 30))
         self.assertTrue(database.was_calendar_notification_sent("event-key", 30))
 
+    def test_calendar_notification_offsets_are_tracked_independently(self):
+        self.assertTrue(database.mark_calendar_notification_sent("event-key", 1440))
+        self.assertFalse(database.was_calendar_notification_sent("event-key", 120))
+        self.assertTrue(database.mark_calendar_notification_sent("event-key", 120))
+        self.assertTrue(database.was_calendar_notification_sent("event-key", 1440))
+        self.assertTrue(database.was_calendar_notification_sent("event-key", 120))
+
     def test_actionable_alert_records_feedback(self):
         alert = database.create_assistant_alert(1, 99, "calendar", "event-1", "Doktor")
         same_alert = database.create_assistant_alert(1, 99, "calendar", "event-1", "Doktor")

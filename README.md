@@ -63,7 +63,7 @@ TIMEZONE=Europe/Istanbul
 CALENDAR_ICAL_URL=https://calendar.google.com/calendar/ical/.../basic.ics
 CALENDAR_USER_ID=Telegram_kullanici_kimliginiz
 CALENDAR_CHAT_ID=Telegram_sohbet_kimliginiz
-CALENDAR_REMINDER_MINUTES=30
+# Takvim bildirimleri 24 saat ve 2 saat önce gönderilir.
 GEMINI_API_KEY=Google_AI_Studio_anahtariniz
 GEMINI_MODEL=gemini-2.5-flash
 MORNING_BRIEFING_TIME=06:00
@@ -84,7 +84,7 @@ Render PostgreSQL'den ilk geçişte eski verileri bir kez kopyalamak için geçi
 2. Bilgisayarda Google Takvim'i açın; **Ayarlar > Takvimimin ayarları > Takvimi entegre et** bölümüne gidin.
 3. **iCal biçiminde gizli adres** değerini kopyalayın ve Railway'de `CALENDAR_ICAL_URL` olarak saklayın.
 4. `/takvimbagla` çıktısındaki değerleri `CALENDAR_USER_ID` ve `CALENDAR_CHAT_ID` olarak ekleyin.
-5. İstenen uyarı süresini dakika cinsinden `CALENDAR_REMINDER_MINUTES` ile ayarlayın.
+5. Bot etkinlikleri otomatik olarak 24 saat ve 2 saat önce iki kez hatırlatır.
 
 Gizli iCal adresini Telegram mesajına, GitHub'a veya `.env.example` dosyasına yazmayın.
 Bağlantı salt okunurdur; bot takviminizde etkinlik değiştiremez veya silemez.

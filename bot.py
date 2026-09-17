@@ -77,9 +77,7 @@ ADMIN_CHAT_ID = os.getenv("ADMIN_CHAT_ID", "").strip()
 CALENDAR_ICAL_URL = os.getenv("CALENDAR_ICAL_URL", "").strip()
 CALENDAR_USER_ID = int(os.getenv("CALENDAR_USER_ID", "0") or 0)
 CALENDAR_CHAT_ID = int(os.getenv("CALENDAR_CHAT_ID", ADMIN_CHAT_ID or "0") or 0)
-CALENDAR_REMINDER_MINUTES = max(
-    0, min(int(os.getenv("CALENDAR_REMINDER_MINUTES", "30") or 30), 10_080)
-)
+CALENDAR_REMINDER_OFFSETS = (24 * 60, 2 * 60)
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash").strip()
 GEMINI_MAX_OUTPUT_TOKENS = max(
@@ -90,7 +88,7 @@ NEWS_DIGEST_TIME = os.getenv("NEWS_DIGEST_TIME", "06:10").strip()
 MIDDAY_CHECK_TIME = os.getenv("MIDDAY_CHECK_TIME", "13:30").strip()
 EVENING_SUMMARY_TIME = os.getenv("EVENING_SUMMARY_TIME", "21:00").strip()
 WEEKLY_REVIEW_TIME = os.getenv("WEEKLY_REVIEW_TIME", "18:00").strip()
-APP_VERSION = "2.4"
+APP_VERSION = "2.5"
 MORNING_BRIEFING_TEST_ON_START = os.getenv(
     "MORNING_BRIEFING_TEST_ON_START", ""
 ).strip().lower() in {"1", "true", "yes", "on"}
@@ -121,6 +119,9 @@ INTRO_TEXT = (
 RELEASE_NOTES_TEXT = (
     "🆕 *Güncelleme notları*\n"
     "━━━━━━━━━━━━━━━━━━━━━\n"
+    "*v2.5 · İki aşamalı takvim uyarısı*\n"
+    "• Etkinlikler artık 24 saat ve 2 saat önce iki kez hatırlatılıyor\n"
+    "• Gecikmiş uyarılar aynı anda yığılmıyor\n\n"
     "*v2.4 · Kararlılık ve kullanım kolaylığı*\n"
     "• Otomatik bildirim zamanlamaları birlikte ve güvenli biçimde yenileniyor\n"
     "• Teknik servis hataları artık kullanıcıya ham ayrıntı göstermiyor\n"
@@ -249,7 +250,7 @@ def notification_settings_text(user_id):
         f"🧭 Akıllı kontrol: *{MIDDAY_CHECK_TIME} · yalnızca gerekirse*\n"
         f"🌙 Gün kapanışı: *Her gün {EVENING_SUMMARY_TIME}*\n"
         f"📊 Haftalık değerlendirme: *Pazar {WEEKLY_REVIEW_TIME}*\n"
-        f"📅 Takvim uyarısı: *{CALENDAR_REMINDER_MINUTES} dakika önce*\n"
+        "📅 Takvim uyarıları: *24 saat ve 2 saat önce*\n"
         f"🔗 Telefon takvimi: *{calendar_state}*\n"
         f"⏰ Bekleyen kişisel hatırlatıcı: *{pending_count}*\n\n"
         "Sabah, haber ve takvim uyarıları varsayılan olarak açık; diğerleri sessizdir. "
@@ -347,7 +348,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "━━━━━━━━━━━━━━━━━━━━━\n"
         f"• Her sabah *{MORNING_BRIEFING_TIME}* günlük brifing kendiliğinden gelir.\n"
         f"• Türkiye ve dünya haber özeti *{NEWS_DIGEST_TIME}* saatinde ayrı gelir.\n"
-        f"• Takvim etkinlikleri yaklaşık *{CALENDAR_REMINDER_MINUTES} dakika önce* bildirilir.\n"
+        "• Takvim etkinlikleri *24 saat ve 2 saat önce* bildirilir.\n"
         "• Öğlen kontrolü, akşam özeti ve haftalık değerlendirme varsayılan olarak kapalıdır.\n"
         "• Kendi hatırlatıcını kurmak için _20 dakika sonra su içmeyi hatırlat_ yazabilirsin.\n"
         "• Bir soru veya planlama isteğini doğrudan mesaj olarak gönderebilirsin.\n\n"
@@ -1084,7 +1085,7 @@ async def get_combined_upcoming_events(user_id, range_start=None, range_end=None
 
 
 async def calendar_sync_callback(context: ContextTypes.DEFAULT_TYPE):
-    """Send one Telegram reminder for each approaching calendar event."""
+    """Send the due 24-hour or 2-hour reminder for each calendar event."""
     if not (CALENDAR_ICAL_URL and CALENDAR_USER_ID and CALENDAR_CHAT_ID):
         return
     if not db.notification_enabled(CALENDAR_USER_ID, "calendar"):
@@ -1094,7 +1095,7 @@ async def calendar_sync_callback(context: ContextTypes.DEFAULT_TYPE):
         events = await get_combined_upcoming_events(
             CALENDAR_USER_ID,
             now - timedelta(hours=6),
-            now + timedelta(minutes=CALENDAR_REMINDER_MINUTES + 2),
+            now + timedelta(minutes=max(CALENDAR_REMINDER_OFFSETS) + 2),
             40,
         )
     except Exception:
@@ -1105,12 +1106,17 @@ async def calendar_sync_callback(context: ContextTypes.DEFAULT_TYPE):
         if event.get("all_day"):
             continue
         seconds_until = (event["starts_at"] - now).total_seconds()
-        if -120 <= seconds_until <= CALENDAR_REMINDER_MINUTES * 60:
-            if db.was_calendar_notification_sent(event["key"], CALENDAR_REMINDER_MINUTES):
+        reminder_offset = due_calendar_reminder_offset(seconds_until)
+        if reminder_offset is not None:
+            if db.was_calendar_notification_sent(event["key"], reminder_offset):
                 continue
             local_start = event["starts_at"].astimezone(LOCAL_TIMEZONE)
             alert = db.create_assistant_alert(
-                CALENDAR_USER_ID, CALENDAR_CHAT_ID, "calendar", event["key"], event["title"]
+                CALENDAR_USER_ID,
+                CALENDAR_CHAT_ID,
+                "calendar",
+                f"{event['key']}:{reminder_offset}",
+                event["title"],
             )
             alert_id = alert["id"]
             preparation = event_preparation(event["title"])
@@ -1120,7 +1126,7 @@ async def calendar_sync_callback(context: ContextTypes.DEFAULT_TYPE):
                 weather_hint = f"\n🌤️ {_compact_service_text(await get_weather(city), 2)}"
             text = (
                 f"📅 *{escape_markdown(event['title'])}* · {local_start.strftime('%H:%M')}\n"
-                f"⏳ {max(0, round(seconds_until / 60))} dakika kaldı\n"
+                f"⏳ {calendar_offset_label(reminder_offset)} kaldı\n"
                 f"💡 {escape_markdown(preparation)}{escape_markdown(weather_hint)}"
             )
             keyboard = InlineKeyboardMarkup([
@@ -1133,7 +1139,7 @@ async def calendar_sync_callback(context: ContextTypes.DEFAULT_TYPE):
             await context.bot.send_message(
                 chat_id=CALENDAR_CHAT_ID, text=text, parse_mode="Markdown", reply_markup=keyboard
             )
-            db.mark_calendar_notification_sent(event["key"], CALENDAR_REMINDER_MINUTES)
+            db.mark_calendar_notification_sent(event["key"], reminder_offset)
             continue
 
         end_at = event.get("ends_at") or (event["starts_at"] + timedelta(hours=1))
@@ -1162,6 +1168,23 @@ async def calendar_sync_callback(context: ContextTypes.DEFAULT_TYPE):
                 reply_markup=keyboard,
             )
             db.mark_calendar_notification_sent(event["key"], -1)
+
+
+def due_calendar_reminder_offset(seconds_until, grace_seconds=120):
+    """Return only the reminder threshold crossed in the current sync window."""
+    for offset_minutes in CALENDAR_REMINDER_OFFSETS:
+        seconds_after_threshold = offset_minutes * 60 - seconds_until
+        if 0 <= seconds_after_threshold <= grace_seconds:
+            return offset_minutes
+    return None
+
+
+def calendar_offset_label(offset_minutes):
+    if offset_minutes == 24 * 60:
+        return "24 saat"
+    if offset_minutes % 60 == 0:
+        return f"{offset_minutes // 60} saat"
+    return f"{offset_minutes} dakika"
 
 
 def restore_daily_summaries(app):
@@ -1247,10 +1270,9 @@ async def send_release_announcement(app):
     text = (
         f"🎉 *Yeni güncelleme yayında · v{APP_VERSION}*\n"
         "━━━━━━━━━━━━━━━━━━\n"
-        "• Bildirim zamanlamaları daha güvenilir hale getirildi\n"
-        "• Haberler kısaltıldı; uzun ham bağlantılar kaldırıldı\n"
-        "• Servis hataları sade ve anlaşılır gösteriliyor\n"
-        "• Uygulama genelinde test ve kararlılık iyileştirmeleri yapıldı\n\n"
+        "• Takvim etkinlikleri artık 24 saat önce hatırlatılıyor\n"
+        "• Etkinlikten 2 saat önce ikinci bir uyarı geliyor\n"
+        "• Aynı uyarı tekrar gönderilmiyor\n\n"
         "Ayrıntılar için /yenilikler"
     )
     try:
@@ -1314,8 +1336,7 @@ async def initialize_app(app):
             name="external-calendar-sync",
         )
         logger.info(
-            "Harici takvim etkin: %s dakika önce bildirim.",
-            CALENDAR_REMINDER_MINUTES,
+            "Harici takvim etkin: 24 saat ve 2 saat önce bildirim."
         )
     await send_release_announcement(app)
 
@@ -1774,7 +1795,7 @@ async def calendar_connect_command(update: Update, context: ContextTypes.DEFAULT
     if external_calendar_enabled_for(update.effective_user.id):
         await update.message.reply_text(
             "✅ *Telefon takvimin bağlı*\n\n"
-            f"Etkinlikler Google Takvim'den okunuyor ve {CALENDAR_REMINDER_MINUTES} dakika "
+            "Etkinlikler Google Takvim'den okunuyor; 24 saat ve 2 saat "
             "önce Telegram bildirimi gönderiliyor.",
             parse_mode="Markdown",
             reply_markup=get_back_keyboard(),
