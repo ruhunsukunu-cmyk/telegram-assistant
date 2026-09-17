@@ -89,6 +89,24 @@ class TodaySummaryTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Spor yap", result)
         self.assertIn("Su iç", result)
 
+    async def test_morning_briefing_combines_news_market_and_plan(self):
+        with (
+            patch("bot.GEMINI_API_KEY", "test-key"),
+            patch("bot.build_today_summary", new=AsyncMock(return_value="☀️ Bugün")),
+            patch("bot.get_market_rates", new=AsyncMock(return_value="💹 Piyasa")),
+            patch("bot.build_gemini_context", new=AsyncMock(return_value="Görev: Spor")),
+            patch("bot.generate_grounded_text", new=AsyncMock(return_value=(
+                "🗞️ Kritik gelişmeler\n• Haber\n\n🎯 Günün odağı\n1. Spor",
+                [{"title": "Kaynak", "url": "https://example.com"}],
+            ))),
+        ):
+            chunks = await bot.build_morning_briefing(1)
+        result = "\n".join(chunks)
+        self.assertIn("Akıllı sabah özeti", result)
+        self.assertIn("Piyasa", result)
+        self.assertIn("Kritik gelişmeler", result)
+        self.assertIn("https://example.com", result)
+
 
 if __name__ == "__main__":
     unittest.main()

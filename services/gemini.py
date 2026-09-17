@@ -81,3 +81,80 @@ async def generate_text(
     if not text:
         raise GeminiError("Gemini boş yanıt döndürdü.")
     return text
+
+
+async def generate_grounded_text(
+    api_key,
+    prompt,
+    system_instruction,
+    model="gemini-2.5-flash",
+    max_output_tokens=1200,
+    transport=None,
+):
+    """Generate current information with Google Search grounding and sources."""
+    if not api_key:
+        raise GeminiConfigurationError("Gemini API anahtarı tanımlı değil.")
+    if not re.fullmatch(r"[A-Za-z0-9._-]+", model or ""):
+        raise GeminiConfigurationError("Geçersiz Gemini model adı.")
+
+    url = (
+        "https://generativelanguage.googleapis.com/v1beta/models/"
+        f"{model}:generateContent"
+    )
+    payload = {
+        "systemInstruction": {"parts": [{"text": system_instruction}]},
+        "contents": [{"role": "user", "parts": [{"text": prompt}]}],
+        "tools": [{"google_search": {}}],
+        "generationConfig": {
+            "temperature": 0.25,
+            "maxOutputTokens": max(200, min(int(max_output_tokens), 4096)),
+        },
+    }
+    try:
+        async with httpx.AsyncClient(
+            timeout=50,
+            follow_redirects=True,
+            transport=transport,
+        ) as client:
+            response = await client.post(
+                url,
+                headers={
+                    "x-goog-api-key": api_key,
+                    "Content-Type": "application/json",
+                },
+                json=payload,
+            )
+    except httpx.HTTPError as exc:
+        raise GeminiError("Gemini arama servisine ulaşılamadı.") from exc
+
+    if response.status_code == 429:
+        raise GeminiRateLimitError("Gemini arama kullanım limiti doldu.")
+    if response.status_code in {400, 401, 403, 404}:
+        raise GeminiConfigurationError(
+            "Gemini arama anahtarı veya model ayarı doğrulanamadı."
+        )
+    try:
+        response.raise_for_status()
+        data = response.json()
+        candidate = data["candidates"][0]
+        text = "\n".join(
+            part["text"]
+            for part in candidate["content"]["parts"]
+            if part.get("text")
+        ).strip()
+    except (httpx.HTTPStatusError, KeyError, IndexError, TypeError, ValueError) as exc:
+        raise GeminiError("Gemini güncel özet üretemedi.") from exc
+    if not text:
+        raise GeminiError("Gemini güncel özet için boş yanıt döndürdü.")
+
+    sources = []
+    seen_urls = set()
+    metadata = candidate.get("groundingMetadata", {})
+    for chunk in metadata.get("groundingChunks", []):
+        web = chunk.get("web") or {}
+        uri = web.get("uri")
+        if not uri or uri in seen_urls:
+            continue
+        seen_urls.add(uri)
+        sources.append({"title": web.get("title") or "Kaynak", "url": uri})
+    return text, sources[:5]

@@ -1,4 +1,5 @@
 import unittest
+import json
 from unittest.mock import AsyncMock, MagicMock, patch
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
@@ -11,6 +12,7 @@ from services.weather import get_weather
 from services.gemini import (
     GeminiConfigurationError,
     GeminiRateLimitError,
+    generate_grounded_text,
     generate_text,
 )
 
@@ -64,6 +66,28 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
     async def test_gemini_rejects_invalid_model_name(self):
         with self.assertRaises(GeminiConfigurationError):
             await generate_text("test-key", "Soru", "Yanıtla", model="bad/model")
+
+    async def test_grounded_gemini_returns_sources(self):
+        async def handler(request):
+            payload = json.loads(request.content)
+            self.assertEqual(payload["tools"], [{"google_search": {}}])
+            return httpx.Response(200, json={
+                "candidates": [{
+                    "content": {"parts": [{"text": "Güncel özet"}]},
+                    "groundingMetadata": {"groundingChunks": [
+                        {"web": {"title": "Örnek Kaynak", "uri": "https://example.com/news"}}
+                    ]},
+                }]
+            })
+
+        text, sources = await generate_grounded_text(
+            "test-key",
+            "Bugünün haberleri",
+            "Türkçe yanıtla",
+            transport=httpx.MockTransport(handler),
+        )
+        self.assertEqual(text, "Güncel özet")
+        self.assertEqual(sources[0]["url"], "https://example.com/news")
 
     def test_ical_event_is_normalized_and_keyed(self):
         content = b"""BEGIN:VCALENDAR\r

@@ -16,6 +16,7 @@ Telefonunuzdan 7/24 erişebileceğiniz, görevlerinizi ve notlarınızı tutan, 
 - ✨ **Yetenek Rehberi:** Ana menüdeki “Bu bot ne işe yarar?” ekranı bütün özellikleri tek yerde açıklar.
 - 📅 **Telefon Takvimi:** Google Takvim'deki etkinlikleri salt okunur iCal akışıyla gösterir ve yaklaşınca Telegram bildirimi yollar.
 - 🤖 **Gemini Asistan:** Soruları yanıtlar, fikir üretir ve bekleyen görevler ile yakın takvimden yararlanarak gün planlamasına yardım eder.
+- 🌅 **Akıllı Sabah Özeti:** Her sabah hava, takvim, görevler, piyasalar, kaynaklı kritik gelişmeler ve kişisel gün planı gönderir.
 
 ---
 
@@ -59,6 +60,7 @@ CALENDAR_CHAT_ID=Telegram_sohbet_kimliginiz
 CALENDAR_REMINDER_MINUTES=30
 GEMINI_API_KEY=Google_AI_Studio_anahtariniz
 GEMINI_MODEL=gemini-2.5-flash
+MORNING_BRIEFING_TIME=06:00
 ```
 
 `DATABASE_URL` ve `DB_PATH` birlikte tanımlanırsa PostgreSQL kullanılır. Kalıcı Volume
@@ -107,6 +109,7 @@ Telegram'da kendi botunuza gidin ve **/start** yazarak asistanınızı kullanmay
 |---|---|---|
 | `/start` | Ana karşılama panelini ve interaktif butonları açar | `/start` |
 | `/sor <soru>` | Gemini kişisel asistana soru sorar | `/sor Bugün neye öncelik vermeliyim?` |
+| `/sabahozeti` | Kaynaklı akıllı sabah özetini hemen hazırlar | `/sabahozeti` |
 | `/hakkinda` | Botun yapabildiği bütün işleri kategoriler halinde gösterir | `/hakkinda` |
 | `/hava <şehir>` | İstenen şehrin canlı hava durumunu getirir | `/hava ankara` |
 | `/sehir <şehir>` | Menüde kullanılacak varsayılan şehri kaydeder | `/sehir Ankara` |
