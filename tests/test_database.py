@@ -154,10 +154,15 @@ class DatabaseTests(unittest.TestCase):
             1,
         )
 
-    def test_notification_preferences_default_to_enabled(self):
-        self.assertTrue(database.notification_enabled(1, "midday"))
-        database.set_notification_enabled(1, "midday", False)
+    def test_notification_preferences_use_quiet_defaults(self):
+        self.assertTrue(database.notification_enabled(1, "morning"))
+        self.assertTrue(database.notification_enabled(1, "calendar"))
         self.assertFalse(database.notification_enabled(1, "midday"))
+        self.assertFalse(database.notification_enabled(1, "evening"))
+        self.assertFalse(database.notification_enabled(1, "weekly"))
+        self.assertFalse(database.notification_enabled(1, "followup"))
+        database.set_notification_enabled(1, "midday", True)
+        self.assertTrue(database.notification_enabled(1, "midday"))
 
     def test_onboarding_is_shown_only_once(self):
         self.assertFalse(database.has_seen_onboarding(1))

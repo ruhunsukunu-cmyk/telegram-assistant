@@ -503,6 +503,16 @@ def count_completed_tasks_since(user_id, since):
         return cursor.fetchone()["total"]
 
 
+DEFAULT_NOTIFICATION_PREFERENCES = {
+    "morning": True,
+    "calendar": True,
+    "midday": False,
+    "evening": False,
+    "weekly": False,
+    "followup": False,
+}
+
+
 def notification_enabled(user_id, kind):
     with get_db() as conn:
         cursor = conn.cursor()
@@ -511,7 +521,9 @@ def notification_enabled(user_id, kind):
             (user_id, kind),
         )
         row = cursor.fetchone()
-        return bool(row["enabled"]) if row else True
+        if row:
+            return bool(row["enabled"])
+        return DEFAULT_NOTIFICATION_PREFERENCES.get(kind, True)
 
 
 def set_notification_enabled(user_id, kind, enabled):

@@ -4,7 +4,7 @@ Telefonunuzdan 7/24 erişebileceğiniz, görevlerinizi ve notlarınızı tutan, 
 
 ---
 
-## 🌟 Özellikler (Tamamen Ücretsiz, 0 TL Maliyet)
+## 🌟 Özellikler
 
 - 🌤️ **Anlık Hava Durumu:** Open-Meteo açık kaynak API'si ile Türkiye ve dünyanın her şehri için canlı sıcaklık, nem, rüzgar ve hava durumu ikonu.
 - 💹 **Piyasa & Kurlar:** Dolar (USD), Euro (EUR), Sterlin (GBP), Bitcoin (BTC), Ethereum (ETH) ve Solana (SOL) anlık fiyatları.
@@ -13,14 +13,15 @@ Telefonunuzdan 7/24 erişebileceğiniz, görevlerinizi ve notlarınızı tutan, 
 - ⏰ **Zaman Ayarlı Hatırlatıcı:** `/hatirlat 15 Çayı ocaktan al` dediğinizde, tam 15 dakika sonra bot size bildirim gönderir.
 - 💾 **Kalıcı veri desteği:** PostgreSQL (`DATABASE_URL`) veya kalıcı disk üzerindeki SQLite (`DB_PATH`) ile bot yeniden başlasa bile kayıtlar korunur.
 - 🎛️ **İnteraktif Menü:** Mesaj yazmadan butonlarla yönetebileceğiniz modern Inline Keyboard arayüzü.
-- 🧭 **Sade ve proaktif ana ekran:** Günlük brifing, bildirim düzeni, takvim ve asistana soru özelliklerini öne çıkarır; kayıt araçlarını “Diğer” bölümünde toplar.
+- 🧭 **Üç düğmeli ana ekran:** “Bugün”, “Takvim” ve “Ayarlar” dışında dikkat dağıtan öğe göstermez; Gemini için doğrudan mesaj yazılır.
 - 👋 **İlk kullanım tanıtımı:** Yeni kullanıcıya botun amacını birkaç saniyede anlatan kısa bir karşılama gösterir; tanıtım daha sonra “Diğer” menüsünden tekrar açılabilir.
 - 🆕 **Güncelleme notları:** Son sürümde gelen yenilikleri bot içinden okunabilir şekilde listeler.
 - ✨ **Yetenek Rehberi:** “Diğer > Bot neler yapar?” ekranı bütün özellikleri tek yerde açıklar.
 - 📅 **Telefon Takvimi:** Google Takvim'deki etkinlikleri salt okunur iCal akışıyla gösterir ve yaklaşınca Telegram bildirimi yollar.
 - 🤖 **Gemini Asistan:** Soruları yanıtlar, fikir üretir ve bekleyen görevler ile yakın takvimden yararlanarak gün planlamasına yardım eder.
 - 🌅 **Karar Odaklı Sabah Brifingi:** Her sabah hava, takvim, öncelikler ve kaynaklı kritik gelişmelerden kısa bir eylem planı çıkarır.
-- 🧭 **Sessiz Akıllı Kontrol:** Öğlen yalnızca takvim çakışması, geciken iş veya yüksek öncelik varsa mesaj gönderir.
+- 🔥 **X Gündemi:** Resmî X API bağlandığında Türkiye ve dünyadaki en üst iki hashtag'i sabah özetine ekler.
+- 🧭 **Sessiz Akıllı Kontrol:** Öğlen kontrolü, akşam özeti, haftalık değerlendirme ve etkinlik sonrası takip varsayılan olarak kapalıdır; Ayarlar'dan açılabilir.
 - 🧠 **Etkinlik Hazırlığı:** Toplantı, doktor, seyahat ve ödeme gibi etkinliklere uygun hazırlık önerisi ve tek dokunuşlu erteleme sunar.
 - 🌙 **Gün ve Hafta Kapanışı:** Akşam açık döngüleri gösterir; pazar günü tamamlanan işleri ve yaklaşan haftayı değerlendirir.
 
@@ -65,6 +66,9 @@ CALENDAR_CHAT_ID=Telegram_sohbet_kimliginiz
 CALENDAR_REMINDER_MINUTES=30
 GEMINI_API_KEY=Google_AI_Studio_anahtariniz
 GEMINI_MODEL=gemini-2.5-flash
+X_BEARER_TOKEN=X_developer_portal_bearer_tokeni
+X_WORLD_WOEID=1
+X_TURKEY_WOEID=23424969
 MORNING_BRIEFING_TIME=06:00
 MIDDAY_CHECK_TIME=13:30
 EVENING_SUMMARY_TIME=21:00
@@ -98,6 +102,15 @@ Gemini kullanıldığında yazdığınız soru ile yalnızca bekleyen görevleri
 hatırlatıcılarınız, önünüzdeki 7 günlük takvim ve varsayılan şehriniz Google'a gönderilir.
 Notlar ve harcamalar bağlama eklenmez. Google'ın ücretsiz Gemini API katmanındaki içerikleri
 ürün geliştirme amacıyla kullanabileceğini hesaba katarak hassas bilgi göndermeyin.
+
+### X gündemi bağlantısı
+
+1. X Developer Portal'da bir uygulama oluşturup Bearer Token alın.
+2. Anahtarı Railway servis değişkenlerine `X_BEARER_TOKEN` adıyla ekleyin.
+3. Bot Türkiye (`23424969`) ve dünya (`1`) sıralamasındaki ilk iki gerçek hashtag'i sabah özetinde gösterir.
+
+X API ücretlendirmesi X hesabınıza bağlıdır. Token yoksa veya servis hata verirse bot
+uydurma trend üretmez; sabah özetinin kalan bölümleri normal çalışmaya devam eder.
 
 ### 3. Botu Çalıştırın
 - **En Kolay Yol:** Proje klasöründeki `start.bat` dosyasına çift tıklayın!

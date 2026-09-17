@@ -17,13 +17,21 @@ class UiTests(unittest.TestCase):
             callbacks,
             {
                 "btn_briefing",
-                "btn_alerts",
-                "btn_tasks",
                 "btn_calendar",
-                "btn_ai",
-                "btn_more",
+                "btn_settings",
             },
         )
+
+    def test_settings_keeps_secondary_navigation_available(self):
+        markup = bot.get_settings_keyboard().to_dict()
+        callbacks = {
+            button["callback_data"]
+            for row in markup["inline_keyboard"]
+            for button in row
+        }
+        self.assertTrue({
+            "btn_alerts", "btn_intro", "btn_updates", "btn_about", "btn_more"
+        }.issubset(callbacks))
 
     def test_secondary_tools_are_kept_out_of_main_menu(self):
         markup = bot.get_more_keyboard().to_dict()
@@ -35,16 +43,15 @@ class UiTests(unittest.TestCase):
         self.assertTrue({
             "btn_weather", "btn_finance", "btn_reminders", "btn_quick_add",
             "btn_habits", "btn_expenses", "btn_notes", "btn_about", "btn_help",
-            "btn_intro", "btn_updates",
         }.issubset(callbacks))
 
     def test_intro_is_short_and_explains_the_bot(self):
-        self.assertIn("günlük yaşam asistanıyım", bot.INTRO_TEXT)
+        self.assertIn("kişisel asistanım", bot.INTRO_TEXT)
         self.assertIn("Gereksiz yere yazmam", bot.INTRO_TEXT)
         self.assertLess(len(bot.INTRO_TEXT), 700)
 
     def test_release_notes_explain_current_version(self):
-        self.assertIn("v2.1", bot.RELEASE_NOTES_TEXT)
+        self.assertIn("v2.2", bot.RELEASE_NOTES_TEXT)
         self.assertIn("Güncelleme notları", bot.RELEASE_NOTES_TEXT)
 
     def test_alerts_panel_prioritizes_proactive_features(self):
@@ -65,8 +72,8 @@ class UiTests(unittest.TestCase):
         )
 
     def test_main_panel_is_compact(self):
-        self.assertIn("Günlük Asistan", bot.MAIN_MENU_TEXT)
-        self.assertIn("bilgilendirir", bot.MAIN_MENU_TEXT)
+        self.assertIn("Bugün neyi bilmen gerekiyor", bot.MAIN_MENU_TEXT)
+        self.assertIn("önemli gelişmeler", bot.MAIN_MENU_TEXT)
         self.assertLess(len(bot.MAIN_MENU_TEXT), 300)
 
     def test_about_page_lists_core_capabilities(self):
@@ -141,11 +148,15 @@ class TodaySummaryTests(unittest.IsolatedAsyncioTestCase):
                 "🗞️ Kritik gelişmeler\n• Haber\n\n🎯 Günün odağı\n1. Spor",
                 [{"title": "Kaynak", "url": "https://example.com"}],
             ))),
+            patch("bot.build_x_trends_summary", new=AsyncMock(return_value=(
+                "🔥 X gündemi\n🇹🇷 #Türkiye · #Gündem\n🌍 #World · #News"
+            ))),
         ):
             chunks = await bot.build_morning_briefing(1)
         result = "\n".join(chunks)
         self.assertIn("Akıllı sabah özeti", result)
         self.assertIn("Kritik gelişmeler", result)
+        self.assertIn("#Türkiye", result)
         self.assertIn("https://example.com", result)
 
 
