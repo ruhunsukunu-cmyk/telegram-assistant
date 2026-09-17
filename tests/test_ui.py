@@ -67,6 +67,16 @@ class UiTests(unittest.TestCase):
         self.assertEqual(bot.calendar_offset_label(1440), "24 saat")
         self.assertEqual(bot.calendar_offset_label(120), "2 saat")
 
+    def test_calendar_reminder_accepts_markdown_special_characters(self):
+        text = bot.format_calendar_reminder_text(
+            "Proje_[A] *kritik*",
+            datetime(2026, 9, 18, 10, 0, tzinfo=timezone.utc),
+            120,
+            "Dosyaları hazırla",
+        )
+        self.assertIn("Proje_[A] *kritik*", text)
+        self.assertIn("2 saat kaldı", text)
+
     def test_all_user_routine_jobs_are_removed_together(self):
         job_queue = MagicMock()
         jobs_by_name = {

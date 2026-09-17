@@ -1124,10 +1124,8 @@ async def calendar_sync_callback(context: ContextTypes.DEFAULT_TYPE):
             if any(word in event["title"].lower() for word in ("seyahat", "uçuş", "ucus", "piknik", "yürüyüş", "yuruyus")):
                 city = db.get_default_city(CALENDAR_USER_ID, DEFAULT_CITY)
                 weather_hint = f"\n🌤️ {_compact_service_text(await get_weather(city), 2)}"
-            text = (
-                f"📅 *{escape_markdown(event['title'])}* · {local_start.strftime('%H:%M')}\n"
-                f"⏳ {calendar_offset_label(reminder_offset)} kaldı\n"
-                f"💡 {escape_markdown(preparation)}{escape_markdown(weather_hint)}"
+            text = format_calendar_reminder_text(
+                event["title"], local_start, reminder_offset, preparation, weather_hint
             )
             keyboard = InlineKeyboardMarkup([
                 [
@@ -1137,7 +1135,7 @@ async def calendar_sync_callback(context: ContextTypes.DEFAULT_TYPE):
                 [InlineKeyboardButton("🧠 Hazırlık planı", callback_data=f"alert_plan_{alert_id}")],
             ])
             await context.bot.send_message(
-                chat_id=CALENDAR_CHAT_ID, text=text, parse_mode="Markdown", reply_markup=keyboard
+                chat_id=CALENDAR_CHAT_ID, text=text, reply_markup=keyboard
             )
             db.mark_calendar_notification_sent(event["key"], reminder_offset)
             continue
@@ -1185,6 +1183,15 @@ def calendar_offset_label(offset_minutes):
     if offset_minutes % 60 == 0:
         return f"{offset_minutes // 60} saat"
     return f"{offset_minutes} dakika"
+
+
+def format_calendar_reminder_text(title, local_start, offset_minutes, preparation, weather_hint=""):
+    """Build plain Telegram text so calendar titles cannot break entity parsing."""
+    return (
+        f"📅 {title} · {local_start.strftime('%H:%M')}\n"
+        f"⏳ {calendar_offset_label(offset_minutes)} kaldı\n"
+        f"💡 {preparation}{weather_hint}"
+    )
 
 
 def restore_daily_summaries(app):
