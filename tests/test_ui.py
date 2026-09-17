@@ -1,6 +1,6 @@
 import unittest
 from unittest.mock import AsyncMock, patch
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import bot
 
@@ -89,28 +89,43 @@ class UiTests(unittest.TestCase):
         self.assertGreater(len(chunks), 1)
         self.assertTrue(all(len(chunk) <= 3900 for chunk in chunks))
 
+    def test_event_preparation_is_contextual(self):
+        self.assertIn("önceki sonuçlar", bot.event_preparation("Doktor kontrolü"))
+        self.assertIn("Gündemi", bot.event_preparation("Proje toplantısı"))
+        self.assertIn("Bilet", bot.event_preparation("Uçuş"))
+
+    def test_day_analysis_detects_calendar_conflict(self):
+        start = datetime.now(timezone.utc) + timedelta(hours=1)
+        events = [
+            {"title": "Toplantı", "starts_at": start, "ends_at": start + timedelta(hours=1), "all_day": False},
+            {"title": "Doktor", "starts_at": start + timedelta(minutes=30), "ends_at": None, "all_day": False},
+        ]
+        self.assertIn("Takvim çakışması", bot.analyze_day(events, [])[0])
+
 
 class TodaySummaryTests(unittest.IsolatedAsyncioTestCase):
     async def test_today_summary_combines_daily_information(self):
         with (
             patch("bot.get_weather", new=AsyncMock(return_value="🌤️ Hava özeti")),
             patch("bot.db.get_default_city", return_value="Ankara"),
-            patch("bot.db.get_tasks", return_value=[{"title": "Spor yap", "is_done": 0}]),
+            patch("bot.db.get_enriched_tasks", return_value=[{
+                "title": "Spor yap", "is_done": 0, "priority": "normal",
+                "due_at": None, "created_at": datetime.now(timezone.utc),
+            }]),
             patch("bot.db.get_pending_reminders", return_value=[{
                 "message": "Su iç", "due_at": datetime.now(timezone.utc)
             }]),
             patch("bot.get_combined_upcoming_events", new=AsyncMock(return_value=[])),
         ):
             result = await bot.build_today_summary(1)
-        self.assertIn("Bugünün özeti", result)
+        self.assertIn("Bugün", result)
         self.assertIn("Spor yap", result)
         self.assertIn("Su iç", result)
 
-    async def test_morning_briefing_combines_news_market_and_plan(self):
+    async def test_morning_briefing_combines_news_and_plan(self):
         with (
             patch("bot.GEMINI_API_KEY", "test-key"),
             patch("bot.build_today_summary", new=AsyncMock(return_value="☀️ Bugün")),
-            patch("bot.get_market_rates", new=AsyncMock(return_value="💹 Piyasa")),
             patch("bot.build_gemini_context", new=AsyncMock(return_value="Görev: Spor")),
             patch("bot.generate_grounded_text", new=AsyncMock(return_value=(
                 "🗞️ Kritik gelişmeler\n• Haber\n\n🎯 Günün odağı\n1. Spor",
@@ -120,7 +135,6 @@ class TodaySummaryTests(unittest.IsolatedAsyncioTestCase):
             chunks = await bot.build_morning_briefing(1)
         result = "\n".join(chunks)
         self.assertIn("Akıllı sabah özeti", result)
-        self.assertIn("Piyasa", result)
         self.assertIn("Kritik gelişmeler", result)
         self.assertIn("https://example.com", result)
 

@@ -17,7 +17,10 @@ Telefonunuzdan 7/24 erişebileceğiniz, görevlerinizi ve notlarınızı tutan, 
 - ✨ **Yetenek Rehberi:** “Diğer > Bot neler yapar?” ekranı bütün özellikleri tek yerde açıklar.
 - 📅 **Telefon Takvimi:** Google Takvim'deki etkinlikleri salt okunur iCal akışıyla gösterir ve yaklaşınca Telegram bildirimi yollar.
 - 🤖 **Gemini Asistan:** Soruları yanıtlar, fikir üretir ve bekleyen görevler ile yakın takvimden yararlanarak gün planlamasına yardım eder.
-- 🌅 **Akıllı Sabah Özeti:** Her sabah hava, takvim, görevler, piyasalar, kaynaklı kritik gelişmeler ve kişisel gün planı gönderir.
+- 🌅 **Karar Odaklı Sabah Brifingi:** Her sabah hava, takvim, öncelikler ve kaynaklı kritik gelişmelerden kısa bir eylem planı çıkarır.
+- 🧭 **Sessiz Akıllı Kontrol:** Öğlen yalnızca takvim çakışması, geciken iş veya yüksek öncelik varsa mesaj gönderir.
+- 🧠 **Etkinlik Hazırlığı:** Toplantı, doktor, seyahat ve ödeme gibi etkinliklere uygun hazırlık önerisi ve tek dokunuşlu erteleme sunar.
+- 🌙 **Gün ve Hafta Kapanışı:** Akşam açık döngüleri gösterir; pazar günü tamamlanan işleri ve yaklaşan haftayı değerlendirir.
 
 ---
 
@@ -52,7 +55,6 @@ harici bir PostgreSQL bağlantısı tanımlayın; aksi halde geçici SQLite dosy
 TELEGRAM_BOT_TOKEN=BotFather_tokeni
 DB_PATH=/data/assistant.db
 WEBHOOK_URL=https://railway-servis-alan-adiniz.up.railway.app
-MINI_APP_URL=https://telegram-assistant-panel.onrender.com
 DEFAULT_CITY=Istanbul
 TIMEZONE=Europe/Istanbul
 CALENDAR_ICAL_URL=https://calendar.google.com/calendar/ical/.../basic.ics
@@ -62,6 +64,9 @@ CALENDAR_REMINDER_MINUTES=30
 GEMINI_API_KEY=Google_AI_Studio_anahtariniz
 GEMINI_MODEL=gemini-2.5-flash
 MORNING_BRIEFING_TIME=06:00
+MIDDAY_CHECK_TIME=13:30
+EVENING_SUMMARY_TIME=21:00
+WEEKLY_REVIEW_TIME=18:00
 ```
 
 `DATABASE_URL` ve `DB_PATH` birlikte tanımlanırsa PostgreSQL kullanılır. Kalıcı Volume
@@ -141,7 +146,4 @@ Telegram'da kendi botunuza gidin ve **/start** yazarak asistanınızı kullanmay
 
 Doğal dil örnekleri: `yarın saat 10 doktoru hatırlat`, `250 TL market haftalık alışveriş`, `alışkanlık ekle Kitap oku`.
 
-## Mini App
-
-`miniapp/index.html` statik bir HTTPS adresinde yayınlanıp `MINI_APP_URL` ortam değişkenine yazıldığında ana menüde görsel panel açılır. Panel Bugün, Görevler, Alışkanlıklar ve Harcamalar ekranlarını Telegram botuna bağlar.
 | `/help` | Tüm komutları ve yardım rehberini gösterir | `/help` |

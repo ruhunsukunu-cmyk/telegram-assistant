@@ -137,6 +137,28 @@ class DatabaseTests(unittest.TestCase):
         self.assertFalse(database.mark_calendar_notification_sent("event-key", 30))
         self.assertTrue(database.was_calendar_notification_sent("event-key", 30))
 
+    def test_actionable_alert_records_feedback(self):
+        alert = database.create_assistant_alert(1, 99, "calendar", "event-1", "Doktor")
+        same_alert = database.create_assistant_alert(1, 99, "calendar", "event-1", "Doktor")
+        self.assertEqual(alert["id"], same_alert["id"])
+        self.assertTrue(database.resolve_assistant_alert(alert["id"], 1, "snoozed", "snooze_10"))
+        self.assertEqual(database.get_feedback_summary(1)["snooze_10"], 1)
+
+    def test_completed_tasks_are_counted_for_review(self):
+        from datetime import timedelta, timezone
+
+        task_id = database.add_task(1, "Haftalık iş")
+        database.complete_task(task_id, 1)
+        self.assertEqual(
+            database.count_completed_tasks_since(1, datetime.now(timezone.utc) - timedelta(days=1)),
+            1,
+        )
+
+    def test_notification_preferences_default_to_enabled(self):
+        self.assertTrue(database.notification_enabled(1, "midday"))
+        database.set_notification_enabled(1, "midday", False)
+        self.assertFalse(database.notification_enabled(1, "midday"))
+
     def test_delete_user_data_removes_owned_records(self):
         database.add_note(1, "özel not")
         database.add_task(1, "özel görev")

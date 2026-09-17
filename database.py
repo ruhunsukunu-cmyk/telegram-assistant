@@ -13,6 +13,7 @@ MIGRATION_TABLES = (
     "notes", "tasks", "reminders", "user_settings", "task_metadata",
     "reminder_rules", "habits", "habit_logs", "expenses", "calendar_events",
     "user_preferences", "daily_summaries", "budgets", "calendar_notifications",
+    "assistant_alerts", "assistant_feedback", "task_activity", "notification_preferences",
 )
 
 
@@ -81,6 +82,10 @@ def init_db():
         cursor.execute("CREATE TABLE IF NOT EXISTS budgets (user_id BIGINT PRIMARY KEY, monthly_limit NUMERIC NOT NULL, currency TEXT NOT NULL DEFAULT 'TRY')")
         cursor.execute("CREATE TABLE IF NOT EXISTS app_metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
         cursor.execute("CREATE TABLE IF NOT EXISTS calendar_notifications (event_key TEXT NOT NULL, offset_minutes INTEGER NOT NULL, sent_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY (event_key, offset_minutes))")
+        cursor.execute(f"CREATE TABLE IF NOT EXISTS assistant_alerts (id {id_column}, user_id BIGINT NOT NULL, chat_id BIGINT NOT NULL, kind TEXT NOT NULL, ref_key TEXT NOT NULL, title TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'open', created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, UNIQUE(user_id, kind, ref_key))")
+        cursor.execute(f"CREATE TABLE IF NOT EXISTS assistant_feedback (id {id_column}, user_id BIGINT NOT NULL, alert_id BIGINT NULL, action TEXT NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)")
+        cursor.execute(f"CREATE TABLE IF NOT EXISTS task_activity (id {id_column}, user_id BIGINT NOT NULL, task_id BIGINT NOT NULL, action TEXT NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)")
+        cursor.execute("CREATE TABLE IF NOT EXISTS notification_preferences (user_id BIGINT NOT NULL, kind TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 1, PRIMARY KEY (user_id, kind))")
         conn.commit()
 
 
@@ -168,7 +173,20 @@ def get_tasks(user_id):
 
 
 def complete_task(task_id, user_id):
-    return _change("UPDATE tasks SET is_done = 1 WHERE id = ? AND user_id = ?", (task_id, user_id))
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            _sql("UPDATE tasks SET is_done = 1 WHERE id = ? AND user_id = ? AND is_done = 0"),
+            (task_id, user_id),
+        )
+        changed = cursor.rowcount > 0
+        if changed:
+            cursor.execute(
+                _sql("INSERT INTO task_activity (user_id, task_id, action) VALUES (?, ?, 'completed')"),
+                (user_id, task_id),
+            )
+        conn.commit()
+        return changed
 
 
 def delete_task(task_id, user_id):
@@ -201,6 +219,16 @@ def get_pending_reminders(user_id=None):
         query += " ORDER BY due_at"
         cursor.execute(_sql(query), params)
         return cursor.fetchall()
+
+
+def get_reminder(reminder_id, user_id):
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            _sql("SELECT id, user_id, chat_id, message, due_at, sent_at FROM reminders WHERE id = ? AND user_id = ?"),
+            (reminder_id, user_id),
+        )
+        return cursor.fetchone()
 
 
 def mark_reminder_sent(reminder_id):
@@ -409,6 +437,91 @@ def mark_calendar_notification_sent(event_key, offset_minutes):
         return cursor.rowcount > 0
 
 
+def create_assistant_alert(user_id, chat_id, kind, ref_key, title):
+    """Create an actionable alert once and return its stable database id."""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            _sql("INSERT INTO assistant_alerts (user_id, chat_id, kind, ref_key, title) VALUES (?, ?, ?, ?, ?) ON CONFLICT(user_id, kind, ref_key) DO NOTHING"),
+            (user_id, chat_id, kind, ref_key, title[:500]),
+        )
+        conn.commit()
+        cursor.execute(
+            _sql("SELECT id, user_id, chat_id, kind, ref_key, title, status FROM assistant_alerts WHERE user_id = ? AND kind = ? AND ref_key = ?"),
+            (user_id, kind, ref_key),
+        )
+        return cursor.fetchone()
+
+
+def get_assistant_alert(alert_id, user_id):
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            _sql("SELECT id, user_id, chat_id, kind, ref_key, title, status FROM assistant_alerts WHERE id = ? AND user_id = ?"),
+            (alert_id, user_id),
+        )
+        return cursor.fetchone()
+
+
+def resolve_assistant_alert(alert_id, user_id, status, action=None):
+    """Close/snooze an alert and retain lightweight feedback for later personalization."""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            _sql("UPDATE assistant_alerts SET status = ? WHERE id = ? AND user_id = ?"),
+            (status, alert_id, user_id),
+        )
+        changed = cursor.rowcount > 0
+        if changed and action:
+            cursor.execute(
+                _sql("INSERT INTO assistant_feedback (user_id, alert_id, action) VALUES (?, ?, ?)"),
+                (user_id, alert_id, action),
+            )
+        conn.commit()
+        return changed
+
+
+def get_feedback_summary(user_id):
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            _sql("SELECT action, COUNT(*) AS total FROM assistant_feedback WHERE user_id = ? GROUP BY action"),
+            (user_id,),
+        )
+        return {row["action"]: row["total"] for row in cursor.fetchall()}
+
+
+def count_completed_tasks_since(user_id, since):
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            _sql("SELECT COUNT(*) AS total FROM task_activity WHERE user_id = ? AND action = 'completed' AND created_at >= ?"),
+            (user_id, _datetime_value(since)),
+        )
+        return cursor.fetchone()["total"]
+
+
+def notification_enabled(user_id, kind):
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            _sql("SELECT enabled FROM notification_preferences WHERE user_id = ? AND kind = ?"),
+            (user_id, kind),
+        )
+        row = cursor.fetchone()
+        return bool(row["enabled"]) if row else True
+
+
+def set_notification_enabled(user_id, kind, enabled):
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            _sql("INSERT INTO notification_preferences (user_id, kind, enabled) VALUES (?, ?, ?) ON CONFLICT(user_id, kind) DO UPDATE SET enabled = excluded.enabled"),
+            (user_id, kind, int(bool(enabled))),
+        )
+        conn.commit()
+
+
 def export_user_data(user_id):
     data = {}
     with get_db() as conn:
@@ -420,6 +533,9 @@ def export_user_data(user_id):
             "habits": "SELECT id, name, created_at FROM habits WHERE user_id = ?",
             "expenses": "SELECT id, amount, currency, category, note, spent_at FROM expenses WHERE user_id = ?",
             "calendar_events": "SELECT id, title, starts_at, ends_at FROM calendar_events WHERE user_id = ?",
+            "assistant_feedback": "SELECT action, created_at FROM assistant_feedback WHERE user_id = ?",
+            "task_activity": "SELECT task_id, action, created_at FROM task_activity WHERE user_id = ?",
+            "notification_preferences": "SELECT kind, enabled FROM notification_preferences WHERE user_id = ?",
         }.items():
             cursor.execute(_sql(query), (user_id,))
             data[name] = [dict(row) for row in cursor.fetchall()]
@@ -433,6 +549,10 @@ def delete_user_data(user_id):
         cursor.execute(_sql("DELETE FROM habit_logs WHERE user_id = ?"), (user_id,))
         cursor.execute(_sql("DELETE FROM task_metadata WHERE user_id = ?"), (user_id,))
         cursor.execute(_sql("DELETE FROM reminder_rules WHERE user_id = ?"), (user_id,))
+        cursor.execute(_sql("DELETE FROM assistant_feedback WHERE user_id = ?"), (user_id,))
+        cursor.execute(_sql("DELETE FROM assistant_alerts WHERE user_id = ?"), (user_id,))
+        cursor.execute(_sql("DELETE FROM task_activity WHERE user_id = ?"), (user_id,))
+        cursor.execute(_sql("DELETE FROM notification_preferences WHERE user_id = ?"), (user_id,))
         for table in ("notes", "tasks", "reminders", "habits", "expenses", "calendar_events", "user_settings", "user_preferences", "daily_summaries", "budgets"):
             cursor.execute(_sql(f"DELETE FROM {table} WHERE user_id = ?"), (user_id,))
         conn.commit()
