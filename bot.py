@@ -88,7 +88,7 @@ NEWS_DIGEST_TIME = os.getenv("NEWS_DIGEST_TIME", "06:10").strip()
 MIDDAY_CHECK_TIME = os.getenv("MIDDAY_CHECK_TIME", "13:30").strip()
 EVENING_SUMMARY_TIME = os.getenv("EVENING_SUMMARY_TIME", "21:00").strip()
 WEEKLY_REVIEW_TIME = os.getenv("WEEKLY_REVIEW_TIME", "18:00").strip()
-APP_VERSION = "2.6"
+APP_VERSION = "2.6.1"
 MORNING_BRIEFING_TEST_ON_START = os.getenv(
     "MORNING_BRIEFING_TEST_ON_START", ""
 ).strip().lower() in {"1", "true", "yes", "on"}
@@ -119,8 +119,10 @@ INTRO_TEXT = (
 RELEASE_NOTES_TEXT = (
     "🆕 *Güncelleme notları*\n"
     "━━━━━━━━━━━━━━━━━━━━━\n"
+    "*v2.6.1 · Rutin düzeltmesi*\n"
+    "• 08.00 hatırlatıcısı B12 olarak düzeltildi\n\n"
     "*v2.6 · Günlük sağlık ve gece rutini*\n"
-    "• 08.00 magnezyum ve 18.00 Omega-3 hatırlatıcıları eklendi\n"
+    "• 08.00 B12 ve 18.00 Omega-3 hatırlatıcıları eklendi\n"
     "• 22.00 magnezyum, diş fırçalama ve gün kaydı rutini eklendi\n"
     "• Aynı rutinlerin yeniden başlatmada çoğalması engellendi\n\n"
     "*v2.5 · İki aşamalı takvim uyarısı*\n"
@@ -980,8 +982,22 @@ def ensure_personal_daily_routines():
     if not (CALENDAR_USER_ID and CALENDAR_CHAT_ID):
         return []
 
+    morning_message = "B12 hapını al."
+    legacy_morning_message = "Magnezyum hapını al."
+    legacy_id = db.find_active_recurring_reminder(
+        CALENDAR_USER_ID, CALENDAR_CHAT_ID, legacy_morning_message, "daily"
+    )
+    current_id = db.find_active_recurring_reminder(
+        CALENDAR_USER_ID, CALENDAR_CHAT_ID, morning_message, "daily"
+    )
+    if legacy_id and not current_id:
+        db.update_active_reminder_message(
+            legacy_id, CALENDAR_USER_ID, morning_message
+        )
+        current_id = legacy_id
+
     routines = (
-        (8, 0, "Magnezyum hapını al."),
+        (8, 0, morning_message),
         (18, 0, "Omega-3 hapını al."),
         (
             22,
@@ -992,8 +1008,10 @@ def ensure_personal_daily_routines():
     now_local = datetime.now(LOCAL_TIMEZONE)
     created = []
     for hour, minute, message in routines:
-        existing_id = db.find_active_recurring_reminder(
-            CALENDAR_USER_ID, CALENDAR_CHAT_ID, message, "daily"
+        existing_id = current_id if message == morning_message else (
+            db.find_active_recurring_reminder(
+                CALENDAR_USER_ID, CALENDAR_CHAT_ID, message, "daily"
+            )
         )
         if existing_id:
             continue
@@ -1314,7 +1332,7 @@ async def send_release_announcement(app):
     text = (
         f"🎉 *Yeni güncelleme yayında · v{APP_VERSION}*\n"
         "━━━━━━━━━━━━━━━━━━\n"
-        "• 08.00 magnezyum hatırlatıcısı eklendi\n"
+        "• 08.00 hatırlatıcısı B12 olarak düzeltildi\n"
         "• 18.00 Omega-3 hatırlatıcısı eklendi\n"
         "• 22.00 uyku öncesi rutini eklendi\n\n"
         "Ayrıntılar için /yenilikler"

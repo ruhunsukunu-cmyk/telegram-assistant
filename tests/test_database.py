@@ -76,6 +76,15 @@ class DatabaseTests(unittest.TestCase):
             database.find_active_recurring_reminder(1, 99, "Omega-3 hapını al.")
         )
 
+    def test_active_reminder_message_can_be_corrected(self):
+        reminder_id = database.add_reminder(
+            1, 99, "Magnezyum hapını al.", datetime.now(timezone.utc) + timedelta(hours=1)
+        )
+        self.assertTrue(
+            database.update_active_reminder_message(reminder_id, 1, "B12 hapını al.")
+        )
+        self.assertEqual(database.get_reminder(reminder_id, 1)["message"], "B12 hapını al.")
+
     def test_reminders_are_scoped_and_can_be_cancelled(self):
         from datetime import datetime, timedelta, timezone
 

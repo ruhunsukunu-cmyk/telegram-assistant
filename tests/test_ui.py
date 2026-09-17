@@ -105,6 +105,7 @@ class UiTests(unittest.TestCase):
             patch.object(bot, "CALENDAR_USER_ID", 7),
             patch.object(bot, "CALENDAR_CHAT_ID", 99),
             patch.object(bot.db, "find_active_recurring_reminder", return_value=None),
+            patch.object(bot.db, "update_active_reminder_message") as rename,
             patch.object(bot.db, "add_reminder", side_effect=[101, 102, 103]) as add,
             patch.object(bot.db, "set_reminder_recurrence") as recur,
         ):
@@ -113,10 +114,27 @@ class UiTests(unittest.TestCase):
         self.assertEqual(created, [101, 102, 103])
         self.assertEqual(add.call_count, 3)
         self.assertEqual(recur.call_count, 3)
+        rename.assert_not_called()
         messages = [call.args[2] for call in add.call_args_list]
-        self.assertIn("Magnezyum hapını al.", messages)
+        self.assertIn("B12 hapını al.", messages)
         self.assertIn("Omega-3 hapını al.", messages)
         self.assertTrue(any("Uyku öncesi rutin" in message for message in messages))
+
+    def test_legacy_morning_magnesium_is_renamed_to_b12(self):
+        def find(_user_id, _chat_id, message, _recurrence):
+            return 42 if message == "Magnezyum hapını al." else None
+
+        with (
+            patch.object(bot, "CALENDAR_USER_ID", 7),
+            patch.object(bot, "CALENDAR_CHAT_ID", 99),
+            patch.object(bot.db, "find_active_recurring_reminder", side_effect=find),
+            patch.object(bot.db, "update_active_reminder_message") as rename,
+            patch.object(bot.db, "add_reminder", side_effect=[102, 103]),
+            patch.object(bot.db, "set_reminder_recurrence"),
+        ):
+            bot.ensure_personal_daily_routines()
+
+        rename.assert_called_once_with(42, 7, "B12 hapını al.")
 
     def test_alerts_panel_prioritizes_proactive_features(self):
         markup = bot.get_alerts_keyboard().to_dict()

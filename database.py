@@ -280,6 +280,14 @@ def find_active_recurring_reminder(user_id, chat_id, message, recurrence="daily"
         return row["id"] if row else None
 
 
+def update_active_reminder_message(reminder_id, user_id, message):
+    """Rename an active reminder without changing its schedule."""
+    return _change(
+        "UPDATE reminders SET message = ? WHERE id = ? AND user_id = ? AND sent_at IS NULL",
+        (message.strip(), reminder_id, user_id),
+    )
+
+
 def set_default_city(user_id, city):
     city = city.strip()[:100]
     with get_db() as conn:
