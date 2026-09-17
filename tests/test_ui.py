@@ -169,13 +169,38 @@ class TodaySummaryTests(unittest.IsolatedAsyncioTestCase):
         ):
             chunks = await bot.build_news_digest()
         result = "\n".join(chunks)
+        self.assertEqual(len(chunks), 2)
         self.assertIn("Türkiye — En önemli 5 haber", result)
         self.assertIn("Dünya — En önemli 5 haber", result)
-        self.assertIn("https://example.com/news", result)
+        self.assertIn("Kaynaklar: Reuters", result)
+        self.assertNotIn("https://", result)
         prompt = grounded.await_args.args[1]
         self.assertIn("geniş toplumsal etki", prompt)
         self.assertIn("Reuters, AP, AFP", prompt)
         self.assertIn("aynı olayın tekrarlarını alma", prompt)
+        self.assertIn("en fazla 120 karakter", prompt)
+
+    async def test_news_digest_retries_when_gemini_output_is_incomplete(self):
+        incomplete = (
+            "🇹🇷 Türkiye — En önemli 5 haber\n1. Haber 1\n2. Yarım",
+            [],
+        )
+        complete = (
+            "🇹🇷 Türkiye — En önemli 5 haber\n"
+            "1. T1\n2. T2\n3. T3\n4. T4\n5. T5\n\n"
+            "🌍 Dünya — En önemli 5 haber\n"
+            "1. D1\n2. D2\n3. D3\n4. D4\n5. D5",
+            [],
+        )
+        grounded = AsyncMock(side_effect=[incomplete, complete])
+        with (
+            patch("bot.GEMINI_API_KEY", "test-key"),
+            patch("bot.generate_grounded_text", new=grounded),
+        ):
+            chunks = await bot.build_news_digest()
+        self.assertEqual(grounded.await_count, 2)
+        self.assertEqual(len(chunks), 2)
+        self.assertIn("5. D5", chunks[1])
 
 
 if __name__ == "__main__":

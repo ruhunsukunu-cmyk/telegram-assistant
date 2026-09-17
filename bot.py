@@ -1,5 +1,6 @@
 import os
 import sys
+import re
 import logging
 import hashlib
 import json
@@ -594,6 +595,7 @@ async def build_news_digest():
         "kaynakla doğrula. Magazin, spor, köşe yazısı, söylenti, sansasyon ve aynı olayın tekrarlarını alma. "
         "Türkiye bölümündeki bir haberi dünya bölümünde yeniden kullanma. "
         "Bir bölümde beş doğrulanmış haber yoksa sayı doldurmak için zayıf veya uydurma başlık ekleme.\n\n"
+        "Her başlık tek satır ve en fazla 120 karakter olsun; açıklama, bağlantı, kaynak adı veya Markdown ekleme. "
         "Yanıtı Türkçe, yorum katmadan ve yalnızca şu biçimde ver:\n"
         "🇹🇷 Türkiye — En önemli 5 haber\n"
         "1. Tek cümlelik sade başlık\n"
@@ -601,7 +603,7 @@ async def build_news_digest():
         "🌍 Dünya — En önemli 5 haber\n"
         "1. Tek cümlelik sade başlık\n"
         "2. ...\n"
-        "Yanıta kaynak listesi ekleme; kaynaklar ayrıca gösterilecek."
+        "Her iki bölümde de numaraları 1'den 5'e kadar eksiksiz tamamla."
     )
     try:
         digest, sources = await generate_grounded_text(
@@ -609,21 +611,46 @@ async def build_news_digest():
             prompt,
             GEMINI_SYSTEM_INSTRUCTION,
             model=GEMINI_MODEL,
-            max_output_tokens=1400,
+            max_output_tokens=3200,
         )
+        turkey_part, separator, world_part = digest.partition("🌍 Dünya")
+        turkey_count = len(re.findall(r"(?m)^\s*[1-5][.)]\s+\S", turkey_part))
+        world_count = len(re.findall(r"(?m)^\s*[1-5][.)]\s+\S", world_part)) if separator else 0
+        if turkey_count < 5 or world_count < 5:
+            retry_prompt = (
+                prompt
+                + "\n\nÖnceki denemede çıktı yarıda kaldı. Bu kez başka hiçbir metin yazmadan "
+                "iki bölümdeki toplam 10 kısa başlığı mutlaka tamamla."
+            )
+            digest, sources = await generate_grounded_text(
+                GEMINI_API_KEY,
+                retry_prompt,
+                GEMINI_SYSTEM_INSTRUCTION,
+                model=GEMINI_MODEL,
+                max_output_tokens=4096,
+            )
     except GeminiError:
         logger.exception("Günlük haber özeti için Gemini araması başarısız oldu")
         return ["📰 Haber özeti şu anda hazırlanamadı. Biraz sonra tekrar deneyebilirsin."]
 
     source_text = ""
     if sources:
-        source_lines = []
+        source_names = []
         for source in sources[:5]:
             title = " ".join(source["title"].split())[:80]
-            source_lines.append(f"• {title}: {source['url']}")
-        source_text = "\n\n🔗 Başlıca kaynaklar\n" + "\n".join(source_lines)
+            if title not in source_names:
+                source_names.append(title)
+        if source_names:
+            source_text = "\n\nKaynaklar: " + " · ".join(source_names)
+
     header = f"📰 Günün haberleri · {now_local.strftime('%d.%m.%Y')}\n━━━━━━━━━━━━━━━━━━━━━\n\n"
-    return split_telegram_text(header + digest + source_text)
+    turkey_part, separator, world_part = digest.partition("🌍 Dünya")
+    if not separator:
+        return split_telegram_text(header + digest + source_text)
+
+    turkey_message = header + turkey_part.strip()
+    world_message = "🌍 Dünya " + world_part.strip() + source_text
+    return [turkey_message, world_message]
 
 
 async def today_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
