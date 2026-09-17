@@ -17,6 +17,7 @@ class UiTests(unittest.TestCase):
             callbacks,
             {
                 "btn_briefing",
+                "btn_news",
                 "btn_calendar",
                 "btn_settings",
             },
@@ -73,7 +74,7 @@ class UiTests(unittest.TestCase):
 
     def test_main_panel_is_compact(self):
         self.assertIn("Bugün neyi bilmen gerekiyor", bot.MAIN_MENU_TEXT)
-        self.assertIn("önemli gelişmeler", bot.MAIN_MENU_TEXT)
+        self.assertIn("önemli haberleri", bot.MAIN_MENU_TEXT)
         self.assertLess(len(bot.MAIN_MENU_TEXT), 300)
 
     def test_about_page_lists_core_capabilities(self):
@@ -139,53 +140,42 @@ class TodaySummaryTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Spor yap", result)
         self.assertIn("Su iç", result)
 
-    async def test_morning_briefing_combines_news_and_plan(self):
-        grounded = AsyncMock(return_value=(
-            "🗞️ Kritik gelişmeler\n• Haber\n\n"
-            "🔥 X'te öne çıkanlar (web kaynaklı)\n"
-            "🇹🇷 Türkiye: #Türkiye · #Gündem\n"
-            "🌍 Dünya: #World · #News\n\n"
-            "🎯 Günün odağı\n1. Spor",
-            [{"title": "Kaynak", "url": "https://example.com"}],
-        ))
+    async def test_morning_briefing_only_contains_personal_plan(self):
+        generated = AsyncMock(return_value="🎯 Günün odağı\n1. Spor")
         with (
             patch("bot.GEMINI_API_KEY", "test-key"),
-            patch("bot.X_BEARER_TOKEN", ""),
             patch("bot.build_today_summary", new=AsyncMock(return_value="☀️ Bugün")),
             patch("bot.build_gemini_context", new=AsyncMock(return_value="Görev: Spor")),
-            patch("bot.generate_grounded_text", new=grounded),
-            patch("bot.build_x_trends_summary", new=AsyncMock(return_value="")),
+            patch("bot.generate_text", new=generated),
         ):
             chunks = await bot.build_morning_briefing(1)
         result = "\n".join(chunks)
         self.assertIn("Akıllı sabah özeti", result)
-        self.assertIn("Kritik gelişmeler", result)
-        self.assertIn("web kaynaklı", result)
-        self.assertIn("#Türkiye", result)
-        self.assertIn("https://example.com", result)
-        prompt = grounded.await_args.args[1]
-        self.assertIn("Türkiye ve dünya gündem etiketlerini", prompt)
-        self.assertIn("kesin X sıralaması", prompt)
+        self.assertIn("Günün odağı", result)
+        self.assertNotIn("Kritik gelişmeler", result)
+        self.assertNotIn("hashtag", generated.await_args.args[1])
 
-    async def test_morning_briefing_prefers_official_x_api_when_configured(self):
+    async def test_news_digest_contains_five_turkey_and_world_headlines(self):
         grounded = AsyncMock(return_value=(
-            "🗞️ Kritik gelişmeler\n• Haber\n\n🎯 Günün odağı\n1. Spor",
-            [],
+            "🇹🇷 Türkiye — En önemli 5 haber\n"
+            "1. Haber 1\n2. Haber 2\n3. Haber 3\n4. Haber 4\n5. Haber 5\n\n"
+            "🌍 Dünya — En önemli 5 haber\n"
+            "1. World 1\n2. World 2\n3. World 3\n4. World 4\n5. World 5",
+            [{"title": "Reuters", "url": "https://example.com/news"}],
         ))
         with (
             patch("bot.GEMINI_API_KEY", "test-key"),
-            patch("bot.X_BEARER_TOKEN", "official-token"),
-            patch("bot.build_today_summary", new=AsyncMock(return_value="☀️ Bugün")),
-            patch("bot.build_gemini_context", new=AsyncMock(return_value="Görev: Spor")),
             patch("bot.generate_grounded_text", new=grounded),
-            patch("bot.build_x_trends_summary", new=AsyncMock(return_value=(
-                "🔥 X gündemi\n🇹🇷 #Türkiye · #Gündem\n🌍 #World · #News"
-            ))),
         ):
-            chunks = await bot.build_morning_briefing(1)
+            chunks = await bot.build_news_digest()
         result = "\n".join(chunks)
-        self.assertIn("🔥 X gündemi", result)
-        self.assertNotIn("web kaynaklı", grounded.await_args.args[1])
+        self.assertIn("Türkiye — En önemli 5 haber", result)
+        self.assertIn("Dünya — En önemli 5 haber", result)
+        self.assertIn("https://example.com/news", result)
+        prompt = grounded.await_args.args[1]
+        self.assertIn("geniş toplumsal etki", prompt)
+        self.assertIn("Reuters, AP, AFP", prompt)
+        self.assertIn("aynı olayın tekrarlarını alma", prompt)
 
 
 if __name__ == "__main__":

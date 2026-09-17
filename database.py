@@ -505,6 +505,7 @@ def count_completed_tasks_since(user_id, since):
 
 DEFAULT_NOTIFICATION_PREFERENCES = {
     "morning": True,
+    "news": True,
     "calendar": True,
     "midday": False,
     "evening": False,

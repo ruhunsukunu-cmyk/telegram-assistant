@@ -13,14 +13,14 @@ Telefonunuzdan 7/24 erişebileceğiniz, görevlerinizi ve notlarınızı tutan, 
 - ⏰ **Zaman Ayarlı Hatırlatıcı:** `/hatirlat 15 Çayı ocaktan al` dediğinizde, tam 15 dakika sonra bot size bildirim gönderir.
 - 💾 **Kalıcı veri desteği:** PostgreSQL (`DATABASE_URL`) veya kalıcı disk üzerindeki SQLite (`DB_PATH`) ile bot yeniden başlasa bile kayıtlar korunur.
 - 🎛️ **İnteraktif Menü:** Mesaj yazmadan butonlarla yönetebileceğiniz modern Inline Keyboard arayüzü.
-- 🧭 **Üç düğmeli ana ekran:** “Bugün”, “Takvim” ve “Ayarlar” dışında dikkat dağıtan öğe göstermez; Gemini için doğrudan mesaj yazılır.
+- 🧭 **Sade ana ekran:** Brifing, Haberler, Takvim ve Ayarlar dışında dikkat dağıtan öğe göstermez; Gemini için doğrudan mesaj yazılır.
 - 👋 **İlk kullanım tanıtımı:** Yeni kullanıcıya botun amacını birkaç saniyede anlatan kısa bir karşılama gösterir; tanıtım daha sonra “Diğer” menüsünden tekrar açılabilir.
 - 🆕 **Güncelleme notları:** Son sürümde gelen yenilikleri bot içinden okunabilir şekilde listeler.
 - ✨ **Yetenek Rehberi:** “Diğer > Bot neler yapar?” ekranı bütün özellikleri tek yerde açıklar.
 - 📅 **Telefon Takvimi:** Google Takvim'deki etkinlikleri salt okunur iCal akışıyla gösterir ve yaklaşınca Telegram bildirimi yollar.
 - 🤖 **Gemini Asistan:** Soruları yanıtlar, fikir üretir ve bekleyen görevler ile yakın takvimden yararlanarak gün planlamasına yardım eder.
-- 🌅 **Karar Odaklı Sabah Brifingi:** Her sabah hava, takvim, öncelikler ve kaynaklı kritik gelişmelerden kısa bir eylem planı çıkarır.
-- 🔥 **X Gündemi:** Resmî X API bağlandığında Türkiye ve dünyadaki en üst iki hashtag'i kullanır; anahtar yoksa Gemini + Google Search ile doğrulanabilen etiketleri “web kaynaklı” olarak gösterir.
+- 🌅 **Karar Odaklı Sabah Brifingi:** Her sabah hava, takvim ve önceliklerden kısa bir kişisel eylem planı çıkarır.
+- 📰 **Ayrı Haber Özeti:** Türkiye ve dünyadan beşer önemli, doğrulanmış başlığı Gemini + Google Search ile ayrı mesajda sunar.
 - 🧭 **Sessiz Akıllı Kontrol:** Öğlen kontrolü, akşam özeti, haftalık değerlendirme ve etkinlik sonrası takip varsayılan olarak kapalıdır; Ayarlar'dan açılabilir.
 - 🧠 **Etkinlik Hazırlığı:** Toplantı, doktor, seyahat ve ödeme gibi etkinliklere uygun hazırlık önerisi ve tek dokunuşlu erteleme sunar.
 - 🌙 **Gün ve Hafta Kapanışı:** Akşam açık döngüleri gösterir; pazar günü tamamlanan işleri ve yaklaşan haftayı değerlendirir.
@@ -66,10 +66,8 @@ CALENDAR_CHAT_ID=Telegram_sohbet_kimliginiz
 CALENDAR_REMINDER_MINUTES=30
 GEMINI_API_KEY=Google_AI_Studio_anahtariniz
 GEMINI_MODEL=gemini-2.5-flash
-X_BEARER_TOKEN=X_developer_portal_bearer_tokeni
-X_WORLD_WOEID=1
-X_TURKEY_WOEID=23424969
 MORNING_BRIEFING_TIME=06:00
+NEWS_DIGEST_TIME=06:10
 MIDDAY_CHECK_TIME=13:30
 EVENING_SUMMARY_TIME=21:00
 WEEKLY_REVIEW_TIME=18:00
@@ -103,18 +101,14 @@ hatırlatıcılarınız, önünüzdeki 7 günlük takvim ve varsayılan şehrini
 Notlar ve harcamalar bağlama eklenmez. Google'ın ücretsiz Gemini API katmanındaki içerikleri
 ürün geliştirme amacıyla kullanabileceğini hesaba katarak hassas bilgi göndermeyin.
 
-### X gündemi bağlantısı
+### Haber seçimi
 
-1. X Developer Portal'da bir uygulama oluşturup Bearer Token alın.
-2. Anahtarı Railway servis değişkenlerine `X_BEARER_TOKEN` adıyla ekleyin.
-3. Bot Türkiye (`23424969`) ve dünya (`1`) sıralamasındaki ilk iki gerçek hashtag'i sabah özetinde gösterir.
-
-`X_BEARER_TOKEN` tanımlı değilse sabah özeti boş kalmaz: Gemini, Google Search ile
-doğrulayabildiği güncel etiketleri **“X'te öne çıkanlar (web kaynaklı)”** başlığıyla verir.
-Bu yedek sonuç resmî veya kesin X sıralaması değildir; doğrulanamayan etiketler üretilmez.
-
-X API ücretlendirmesi X hesabınıza bağlıdır. Token yoksa veya servis hata verirse bot
-uydurma trend üretmez; sabah özetinin kalan bölümleri normal çalışmaya devam eder.
+Haber özeti Google Search ile son 24 saati tarar. Geniş toplumsal etki, güvenlik,
+ekonomi, kamu yaşamı, diplomasi, afet ve Türkiye'ye olası etki ölçütleriyle sıralama yapar.
+Resmî/ilk el kaynaklara ve Reuters, AP, AFP gibi ajanslara öncelik verir; önemli iddiaları
+mümkünse birden fazla güvenilir kaynakla doğrular. Magazin, spor, görüş yazıları, söylentiler
+ve aynı olayın tekrarları alınmaz. Bu seçim editoryal bir yapay zekâ özetidir; kesin ve nesnel
+bir “en önemli” sıralaması değildir.
 
 ### 3. Botu Çalıştırın
 - **En Kolay Yol:** Proje klasöründeki `start.bat` dosyasına çift tıklayın!
@@ -135,6 +129,7 @@ Telegram'da kendi botunuza gidin ve **/start** yazarak asistanınızı kullanmay
 | `/start` | Ana karşılama panelini ve interaktif butonları açar | `/start` |
 | `/sor <soru>` | Gemini kişisel asistana soru sorar | `/sor Bugün neye öncelik vermeliyim?` |
 | `/sabahozeti` | Kaynaklı akıllı sabah özetini hemen hazırlar | `/sabahozeti` |
+| `/haberler` | Türkiye ve dünyadan beşer önemli haberi gösterir | `/haberler` |
 | `/hakkinda` | Botun yapabildiği bütün işleri kategoriler halinde gösterir | `/hakkinda` |
 | `/yenilikler` | Son sürümün güncelleme notlarını gösterir | `/yenilikler` |
 | `/hava <şehir>` | İstenen şehrin canlı hava durumunu getirir | `/hava ankara` |
