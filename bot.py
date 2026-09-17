@@ -88,7 +88,7 @@ NEWS_DIGEST_TIME = os.getenv("NEWS_DIGEST_TIME", "06:10").strip()
 MIDDAY_CHECK_TIME = os.getenv("MIDDAY_CHECK_TIME", "13:30").strip()
 EVENING_SUMMARY_TIME = os.getenv("EVENING_SUMMARY_TIME", "21:00").strip()
 WEEKLY_REVIEW_TIME = os.getenv("WEEKLY_REVIEW_TIME", "18:00").strip()
-APP_VERSION = "2.5"
+APP_VERSION = "2.6"
 MORNING_BRIEFING_TEST_ON_START = os.getenv(
     "MORNING_BRIEFING_TEST_ON_START", ""
 ).strip().lower() in {"1", "true", "yes", "on"}
@@ -119,6 +119,10 @@ INTRO_TEXT = (
 RELEASE_NOTES_TEXT = (
     "🆕 *Güncelleme notları*\n"
     "━━━━━━━━━━━━━━━━━━━━━\n"
+    "*v2.6 · Günlük sağlık ve gece rutini*\n"
+    "• 08.00 magnezyum ve 18.00 Omega-3 hatırlatıcıları eklendi\n"
+    "• 22.00 magnezyum, diş fırçalama ve gün kaydı rutini eklendi\n"
+    "• Aynı rutinlerin yeniden başlatmada çoğalması engellendi\n\n"
     "*v2.5 · İki aşamalı takvim uyarısı*\n"
     "• Etkinlikler artık 24 saat ve 2 saat önce iki kez hatırlatılıyor\n"
     "• Gecikmiş uyarılar aynı anda yığılmıyor\n\n"
@@ -971,6 +975,39 @@ async def restore_reminders(app):
         logger.info("%s bekleyen hatırlatıcı yeniden yüklendi.", restored)
 
 
+def ensure_personal_daily_routines():
+    """Create the owner's medication and bedtime routines once and keep them persistent."""
+    if not (CALENDAR_USER_ID and CALENDAR_CHAT_ID):
+        return []
+
+    routines = (
+        (8, 0, "Magnezyum hapını al."),
+        (18, 0, "Omega-3 hapını al."),
+        (
+            22,
+            0,
+            "Uyku öncesi rutin: Magnezyum hapını al, dişlerini fırçala ve bugün yaptıklarını kısaca kaydet.",
+        ),
+    )
+    now_local = datetime.now(LOCAL_TIMEZONE)
+    created = []
+    for hour, minute, message in routines:
+        existing_id = db.find_active_recurring_reminder(
+            CALENDAR_USER_ID, CALENDAR_CHAT_ID, message, "daily"
+        )
+        if existing_id:
+            continue
+        first = now_local.replace(hour=hour, minute=minute, second=0, microsecond=0)
+        if first <= now_local:
+            first += timedelta(days=1)
+        reminder_id = db.add_reminder(
+            CALENDAR_USER_ID, CALENDAR_CHAT_ID, message, first
+        )
+        db.set_reminder_recurrence(reminder_id, CALENDAR_USER_ID, "daily")
+        created.append(reminder_id)
+    return created
+
+
 async def daily_summary_callback(context: ContextTypes.DEFAULT_TYPE):
     user_id = context.job.data["user_id"]
     if not db.notification_enabled(user_id, "morning"):
@@ -1277,9 +1314,9 @@ async def send_release_announcement(app):
     text = (
         f"🎉 *Yeni güncelleme yayında · v{APP_VERSION}*\n"
         "━━━━━━━━━━━━━━━━━━\n"
-        "• Takvim etkinlikleri artık 24 saat önce hatırlatılıyor\n"
-        "• Etkinlikten 2 saat önce ikinci bir uyarı geliyor\n"
-        "• Aynı uyarı tekrar gönderilmiyor\n\n"
+        "• 08.00 magnezyum hatırlatıcısı eklendi\n"
+        "• 18.00 Omega-3 hatırlatıcısı eklendi\n"
+        "• 22.00 uyku öncesi rutini eklendi\n\n"
         "Ayrıntılar için /yenilikler"
     )
     try:
@@ -1309,6 +1346,9 @@ async def initialize_app(app):
         BotCommand("hakkinda", "Botun yapabildiği her şeyi göster"),
         BotCommand("help", "Yardım merkezini aç"),
     ])
+    created_routines = ensure_personal_daily_routines()
+    if created_routines:
+        logger.info("%s kişisel günlük rutin oluşturuldu.", len(created_routines))
     await restore_reminders(app)
     try:
         hour, minute = map(int, MORNING_BRIEFING_TIME.split(":"))

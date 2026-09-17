@@ -1,7 +1,7 @@
 import os
 import tempfile
 import unittest
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from unittest.mock import patch
 
@@ -61,6 +61,20 @@ class DatabaseTests(unittest.TestCase):
         self.assertEqual(pending[0]["message"], "su iç")
         self.assertTrue(database.mark_reminder_sent(reminder_id))
         self.assertEqual(database.get_pending_reminders(), [])
+
+    def test_finds_matching_active_recurring_reminder(self):
+        reminder_id = database.add_reminder(
+            1, 99, "Magnezyum hapını al.", datetime.now(timezone.utc) + timedelta(hours=1)
+        )
+        database.set_reminder_recurrence(reminder_id, 1, "daily")
+
+        self.assertEqual(
+            database.find_active_recurring_reminder(1, 99, "Magnezyum hapını al."),
+            reminder_id,
+        )
+        self.assertIsNone(
+            database.find_active_recurring_reminder(1, 99, "Omega-3 hapını al.")
+        )
 
     def test_reminders_are_scoped_and_can_be_cancelled(self):
         from datetime import datetime, timedelta, timezone

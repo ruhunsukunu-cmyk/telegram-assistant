@@ -263,6 +263,23 @@ def get_reminder_recurrence(reminder_id):
         return row["recurrence"] if row else None
 
 
+def find_active_recurring_reminder(user_id, chat_id, message, recurrence="daily"):
+    """Return an existing active recurring reminder with the same content."""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            _sql(
+                "SELECT r.id FROM reminders r "
+                "JOIN reminder_rules rr ON rr.reminder_id = r.id "
+                "WHERE r.user_id = ? AND r.chat_id = ? AND r.message = ? "
+                "AND r.sent_at IS NULL AND rr.recurrence = ? LIMIT 1"
+            ),
+            (user_id, chat_id, message, recurrence),
+        )
+        row = cursor.fetchone()
+        return row["id"] if row else None
+
+
 def set_default_city(user_id, city):
     city = city.strip()[:100]
     with get_db() as conn:

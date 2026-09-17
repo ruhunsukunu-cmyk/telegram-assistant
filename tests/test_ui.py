@@ -100,6 +100,24 @@ class UiTests(unittest.TestCase):
             "news-digest-7", "midday-check-7", "evening-summary-7", "weekly-review-7"
         })
 
+    def test_personal_daily_routines_are_created_once(self):
+        with (
+            patch.object(bot, "CALENDAR_USER_ID", 7),
+            patch.object(bot, "CALENDAR_CHAT_ID", 99),
+            patch.object(bot.db, "find_active_recurring_reminder", return_value=None),
+            patch.object(bot.db, "add_reminder", side_effect=[101, 102, 103]) as add,
+            patch.object(bot.db, "set_reminder_recurrence") as recur,
+        ):
+            created = bot.ensure_personal_daily_routines()
+
+        self.assertEqual(created, [101, 102, 103])
+        self.assertEqual(add.call_count, 3)
+        self.assertEqual(recur.call_count, 3)
+        messages = [call.args[2] for call in add.call_args_list]
+        self.assertIn("Magnezyum hapını al.", messages)
+        self.assertIn("Omega-3 hapını al.", messages)
+        self.assertTrue(any("Uyku öncesi rutin" in message for message in messages))
+
     def test_alerts_panel_prioritizes_proactive_features(self):
         markup = bot.get_alerts_keyboard().to_dict()
         callbacks = [
