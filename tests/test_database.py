@@ -171,6 +171,14 @@ class DatabaseTests(unittest.TestCase):
         database.mark_onboarding_seen(1)
         self.assertTrue(database.has_seen_onboarding(1))
 
+    def test_app_metadata_is_persistent_and_updatable(self):
+        self.assertIsNone(database.get_app_metadata("release"))
+        self.assertEqual(database.get_app_metadata("missing", "fallback"), "fallback")
+        database.set_app_metadata("release", "2.4")
+        self.assertEqual(database.get_app_metadata("release"), "2.4")
+        database.set_app_metadata("release", "2.5")
+        self.assertEqual(database.get_app_metadata("release"), "2.5")
+
     def test_delete_user_data_removes_owned_records(self):
         database.add_note(1, "özel not")
         database.add_task(1, "özel görev")

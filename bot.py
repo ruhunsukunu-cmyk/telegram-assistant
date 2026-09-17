@@ -90,6 +90,7 @@ NEWS_DIGEST_TIME = os.getenv("NEWS_DIGEST_TIME", "06:10").strip()
 MIDDAY_CHECK_TIME = os.getenv("MIDDAY_CHECK_TIME", "13:30").strip()
 EVENING_SUMMARY_TIME = os.getenv("EVENING_SUMMARY_TIME", "21:00").strip()
 WEEKLY_REVIEW_TIME = os.getenv("WEEKLY_REVIEW_TIME", "18:00").strip()
+APP_VERSION = "2.4"
 MORNING_BRIEFING_TEST_ON_START = os.getenv(
     "MORNING_BRIEFING_TEST_ON_START", ""
 ).strip().lower() in {"1", "true", "yes", "on"}
@@ -120,6 +121,11 @@ INTRO_TEXT = (
 RELEASE_NOTES_TEXT = (
     "🆕 *Güncelleme notları*\n"
     "━━━━━━━━━━━━━━━━━━━━━\n"
+    "*v2.4 · Kararlılık ve kullanım kolaylığı*\n"
+    "• Otomatik bildirim zamanlamaları birlikte ve güvenli biçimde yenileniyor\n"
+    "• Teknik servis hataları artık kullanıcıya ham ayrıntı göstermiyor\n"
+    "• Yeni sürüm duyurusu yalnızca bir kez gönderiliyor\n"
+    "• Haber özetleri kısa, bağlantısız ve iki okunaklı mesaj halinde sunuluyor\n\n"
     "*v2.3 · Ayrı haber özeti*\n"
     "• Sabah brifingi yalnızca kişisel güne odaklanıyor\n"
     "• Türkiye ve dünyadan beşer önemli haber ayrı mesaj olarak geliyor\n"
@@ -1169,6 +1175,18 @@ def restore_daily_summaries(app):
         )
 
 
+ROUTINE_JOB_PREFIXES = (
+    "daily-summary", "news-digest", "midday-check", "evening-summary", "weekly-review"
+)
+
+
+def remove_user_routine_jobs(job_queue, user_id):
+    """Bir kullanıcının eski zamanlanmış rutinlerini tek noktadan kaldır."""
+    for prefix in ROUTINE_JOB_PREFIXES:
+        for job in job_queue.get_jobs_by_name(f"{prefix}-{user_id}"):
+            job.schedule_removal()
+
+
 def _configured_time(value, fallback):
     try:
         hour, minute = map(int, value.split(":"))
@@ -1182,39 +1200,70 @@ def _configured_time(value, fallback):
     ).timetz()
 
 
-def restore_proactive_routines(app):
-    """Attach quiet-by-default check-ins to every user receiving a daily briefing."""
+def schedule_proactive_routines_for_user(job_queue, user_id, chat_id):
+    """Bir kullanıcı için haber ve gün içi kontrol işlerini planla."""
     midday_at = _configured_time(MIDDAY_CHECK_TIME, (13, 30))
     evening_at = _configured_time(EVENING_SUMMARY_TIME, (21, 0))
     weekly_at = _configured_time(WEEKLY_REVIEW_TIME, (18, 0))
     news_at = _configured_time(NEWS_DIGEST_TIME, (6, 10))
+    common = {"chat_id": chat_id, "data": {"user_id": user_id}}
+    job_queue.run_daily(
+        news_digest_callback, time=news_at, name=f"news-digest-{user_id}", **common
+    )
+    job_queue.run_daily(
+        midday_check_callback, time=midday_at, name=f"midday-check-{user_id}", **common
+    )
+    job_queue.run_daily(
+        evening_summary_callback,
+        time=evening_at,
+        name=f"evening-summary-{user_id}",
+        **common,
+    )
+    job_queue.run_daily(
+        weekly_review_callback,
+        time=weekly_at,
+        days=(0,),
+        name=f"weekly-review-{user_id}",
+        **common,
+    )
+
+
+def restore_proactive_routines(app):
+    """Attach quiet-by-default check-ins to every user receiving a daily briefing."""
     for item in db.get_daily_summaries():
-        common = {"chat_id": item["chat_id"], "data": {"user_id": item["user_id"]}}
-        app.job_queue.run_daily(
-            news_digest_callback,
-            time=news_at,
-            name=f"news-digest-{item['user_id']}",
-            **common,
+        schedule_proactive_routines_for_user(
+            app.job_queue, item["user_id"], item["chat_id"]
         )
-        app.job_queue.run_daily(
-            midday_check_callback,
-            time=midday_at,
-            name=f"midday-check-{item['user_id']}",
-            **common,
+
+
+async def send_release_announcement(app):
+    """Yeni sürümü yönetici sohbete, başarılı olduktan sonra yalnızca bir kez bildir."""
+    if not CALENDAR_CHAT_ID:
+        logger.info("Sürüm duyurusu atlandı: CALENDAR_CHAT_ID ayarlı değil.")
+        return
+    metadata_key = f"release-announcement-{APP_VERSION}"
+    if db.get_app_metadata(metadata_key):
+        return
+    text = (
+        f"🎉 *Yeni güncelleme yayında · v{APP_VERSION}*\n"
+        "━━━━━━━━━━━━━━━━━━\n"
+        "• Bildirim zamanlamaları daha güvenilir hale getirildi\n"
+        "• Haberler kısaltıldı; uzun ham bağlantılar kaldırıldı\n"
+        "• Servis hataları sade ve anlaşılır gösteriliyor\n"
+        "• Uygulama genelinde test ve kararlılık iyileştirmeleri yapıldı\n\n"
+        "Ayrıntılar için /yenilikler"
+    )
+    try:
+        await app.bot.send_message(
+            chat_id=CALENDAR_CHAT_ID,
+            text=text,
+            parse_mode="Markdown",
+            reply_markup=get_main_keyboard(),
         )
-        app.job_queue.run_daily(
-            evening_summary_callback,
-            time=evening_at,
-            name=f"evening-summary-{item['user_id']}",
-            **common,
-        )
-        app.job_queue.run_daily(
-            weekly_review_callback,
-            time=weekly_at,
-            days=(0,),
-            name=f"weekly-review-{item['user_id']}",
-            **common,
-        )
+    except Exception:
+        logger.exception("v%s sürüm duyurusu gönderilemedi", APP_VERSION)
+        return
+    db.set_app_metadata(metadata_key, datetime.now(timezone.utc).isoformat())
 
 
 async def initialize_app(app):
@@ -1268,27 +1317,31 @@ async def initialize_app(app):
             "Harici takvim etkin: %s dakika önce bildirim.",
             CALENDAR_REMINDER_MINUTES,
         )
+    await send_release_announcement(app)
 
 
 async def daily_summary_time_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    for job in context.job_queue.get_jobs_by_name(f"daily-summary-{user_id}"):
-        job.schedule_removal()
     value = " ".join(context.args).strip().lower()
     if value in {"kapat", "off", "iptal"}:
+        remove_user_routine_jobs(context.job_queue, user_id)
         db.delete_daily_summary(user_id)
-        await update.message.reply_text("Günlük otomatik özet kapatıldı.")
+        await update.message.reply_text("Günlük otomatik brifing ve haber akışı kapatıldı.")
         return
     import re
     if not re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", value):
         await update.message.reply_text("Örnek: `/ozetsaat 08:00` veya `/ozetsaat kapat`", parse_mode="Markdown")
         return
+    remove_user_routine_jobs(context.job_queue, user_id)
     db.set_daily_summary(user_id, update.effective_chat.id, value, str(LOCAL_TIMEZONE))
     hour, minute = map(int, value.split(":"))
     send_at = datetime.now(LOCAL_TIMEZONE).replace(hour=hour, minute=minute, second=0, microsecond=0).timetz()
     context.job_queue.run_daily(
         daily_summary_callback, time=send_at, chat_id=update.effective_chat.id,
         data={"user_id": user_id}, name=f"daily-summary-{user_id}",
+    )
+    schedule_proactive_routines_for_user(
+        context.job_queue, user_id, update.effective_chat.id
     )
     await update.message.reply_text(f"☀️ Günlük özet saati {value} olarak ayarlandı.")
 
@@ -2090,6 +2143,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         for reminder in db.get_pending_reminders(user_id):
             for job in context.job_queue.get_jobs_by_name(f"reminder-{reminder['id']}"):
                 job.schedule_removal()
+        remove_user_routine_jobs(context.job_queue, user_id)
         db.delete_user_data(user_id)
         context.user_data.clear()
         await show_panel(update, "✅ Tüm kişisel verilerin silindi.", get_main_keyboard())

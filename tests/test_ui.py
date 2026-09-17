@@ -1,5 +1,5 @@
 import unittest
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 from datetime import datetime, timedelta, timezone
 
 import bot
@@ -52,8 +52,31 @@ class UiTests(unittest.TestCase):
         self.assertLess(len(bot.INTRO_TEXT), 700)
 
     def test_release_notes_explain_current_version(self):
-        self.assertIn("v2.2", bot.RELEASE_NOTES_TEXT)
+        self.assertIn("v2.4", bot.RELEASE_NOTES_TEXT)
         self.assertIn("Güncelleme notları", bot.RELEASE_NOTES_TEXT)
+
+    def test_all_user_routine_jobs_are_removed_together(self):
+        job_queue = MagicMock()
+        jobs_by_name = {
+            f"{prefix}-7": MagicMock() for prefix in bot.ROUTINE_JOB_PREFIXES
+        }
+        job_queue.get_jobs_by_name.side_effect = lambda name: [jobs_by_name[name]]
+
+        bot.remove_user_routine_jobs(job_queue, 7)
+
+        self.assertEqual(job_queue.get_jobs_by_name.call_count, len(bot.ROUTINE_JOB_PREFIXES))
+        for job in jobs_by_name.values():
+            job.schedule_removal.assert_called_once_with()
+
+    def test_proactive_jobs_are_scheduled_as_one_set(self):
+        job_queue = MagicMock()
+
+        bot.schedule_proactive_routines_for_user(job_queue, 7, 99)
+
+        names = {call.kwargs["name"] for call in job_queue.run_daily.call_args_list}
+        self.assertEqual(names, {
+            "news-digest-7", "midday-check-7", "evening-summary-7", "weekly-review-7"
+        })
 
     def test_alerts_panel_prioritizes_proactive_features(self):
         markup = bot.get_alerts_keyboard().to_dict()
@@ -119,6 +142,34 @@ class UiTests(unittest.TestCase):
             {"title": "Doktor", "starts_at": start + timedelta(minutes=30), "ends_at": None, "all_day": False},
         ]
         self.assertIn("Takvim çakışması", bot.analyze_day(events, [])[0])
+
+
+class ReleaseAnnouncementTests(unittest.IsolatedAsyncioTestCase):
+    async def test_release_announcement_is_marked_only_after_success(self):
+        app = MagicMock()
+        app.bot.send_message = AsyncMock()
+        with (
+            patch.object(bot, "CALENDAR_CHAT_ID", 99),
+            patch("bot.db.get_app_metadata", return_value=None),
+            patch("bot.db.set_app_metadata") as save_marker,
+        ):
+            await bot.send_release_announcement(app)
+
+        app.bot.send_message.assert_awaited_once()
+        save_marker.assert_called_once()
+
+    async def test_release_announcement_is_not_repeated(self):
+        app = MagicMock()
+        app.bot.send_message = AsyncMock()
+        with (
+            patch.object(bot, "CALENDAR_CHAT_ID", 99),
+            patch("bot.db.get_app_metadata", return_value="already-sent"),
+            patch("bot.db.set_app_metadata") as save_marker,
+        ):
+            await bot.send_release_announcement(app)
+
+        app.bot.send_message.assert_not_awaited()
+        save_marker.assert_not_called()
 
 
 class TodaySummaryTests(unittest.IsolatedAsyncioTestCase):

@@ -115,6 +115,16 @@ END:VCALENDAR\r
         self.assertEqual(format_price("--"), "--")
         self.assertEqual(format_price(1234567), "1,234,567")
 
+    async def test_finance_error_does_not_leak_internal_details(self):
+        secret_error = "request failed with secret-token"
+        with patch(
+            "services.finance.httpx.AsyncClient",
+            return_value=AsyncClientContext([RuntimeError(secret_error)]),
+        ):
+            result = await get_market_rates()
+        self.assertIn("biraz sonra tekrar dene", result)
+        self.assertNotIn("secret-token", result)
+
     async def test_weather_success(self):
         responses = [
             response({"results": [{"latitude": 41, "longitude": 29, "name": "Istanbul", "country": "Türkiye"}]}),

@@ -554,6 +554,27 @@ def mark_onboarding_seen(user_id):
         conn.commit()
 
 
+def get_app_metadata(key, default=None):
+    """Uygulama seviyesindeki kalıcı bir değeri oku."""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(_sql("SELECT value FROM app_metadata WHERE key = ?"), (key,))
+        row = cursor.fetchone()
+        return row["value"] if row else default
+
+
+def set_app_metadata(key, value):
+    """Uygulama seviyesindeki kalıcı bir değeri ekle veya güncelle."""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            _sql("INSERT INTO app_metadata (key, value) VALUES (?, ?) "
+                 "ON CONFLICT(key) DO UPDATE SET value = excluded.value"),
+            (key, str(value)),
+        )
+        conn.commit()
+
+
 def export_user_data(user_id):
     data = {}
     with get_db() as conn:

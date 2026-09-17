@@ -1,4 +1,9 @@
+import logging
+
 import httpx
+
+
+logger = logging.getLogger(__name__)
 
 
 def format_price(value):
@@ -44,5 +49,6 @@ async def get_market_rates() -> str:
                 f"🔷 *Ethereum (ETH):* `${format_price(eth_usd)}`\n"
                 f"🟣 *Solana (SOL):* `${format_price(sol_usd)}`\n"
             )
-    except Exception as e:
-        return f"⚠️ Finans verileri alınırken bir hata oluştu: {str(e)}"
+    except Exception:
+        logger.exception("Finans verileri alınamadı")
+        return "⚠️ Finans verileri şu anda alınamıyor. Lütfen biraz sonra tekrar dene."
