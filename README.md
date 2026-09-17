@@ -143,7 +143,18 @@ Telegram'da kendi botunuza gidin ve **/start** yazarak asistanınızı kullanmay
 | `/takvimindir` | Takvimi Google/Outlook uyumlu ICS olarak indirir | `/takvimindir` |
 | `/disaaktar` | Kişisel verileri JSON olarak indirir | `/disaaktar` |
 | `/verilerimisil` | Tüm kişisel verileri onayla siler | `/verilerimisil` |
+| `/help` | Tüm komutları ve yardım rehberini gösterir | `/help` |
 
 Doğal dil örnekleri: `yarın saat 10 doktoru hatırlat`, `250 TL market haftalık alışveriş`, `alışkanlık ekle Kitap oku`.
 
-| `/help` | Tüm komutları ve yardım rehberini gösterir | `/help` |
+## Benchmark
+
+Yerel veritabanı gecikmelerini, Türkçe niyet ayrıştırma hızını ve kod boyutu ölçümlerini
+tekrarlamak için:
+
+```powershell
+python benchmarks/project_benchmark.py
+```
+
+Bu ölçüm ağ gecikmesini, Telegram API'sini, Gemini yanıt süresini ve Railway yük altı
+davranışını kapsamaz; bunlar ayrı bir canlı yük testi gerektirir.
