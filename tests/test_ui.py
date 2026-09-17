@@ -140,24 +140,52 @@ class TodaySummaryTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Su iç", result)
 
     async def test_morning_briefing_combines_news_and_plan(self):
+        grounded = AsyncMock(return_value=(
+            "🗞️ Kritik gelişmeler\n• Haber\n\n"
+            "🔥 X'te öne çıkanlar (web kaynaklı)\n"
+            "🇹🇷 Türkiye: #Türkiye · #Gündem\n"
+            "🌍 Dünya: #World · #News\n\n"
+            "🎯 Günün odağı\n1. Spor",
+            [{"title": "Kaynak", "url": "https://example.com"}],
+        ))
         with (
             patch("bot.GEMINI_API_KEY", "test-key"),
+            patch("bot.X_BEARER_TOKEN", ""),
             patch("bot.build_today_summary", new=AsyncMock(return_value="☀️ Bugün")),
             patch("bot.build_gemini_context", new=AsyncMock(return_value="Görev: Spor")),
-            patch("bot.generate_grounded_text", new=AsyncMock(return_value=(
-                "🗞️ Kritik gelişmeler\n• Haber\n\n🎯 Günün odağı\n1. Spor",
-                [{"title": "Kaynak", "url": "https://example.com"}],
-            ))),
+            patch("bot.generate_grounded_text", new=grounded),
+            patch("bot.build_x_trends_summary", new=AsyncMock(return_value="")),
+        ):
+            chunks = await bot.build_morning_briefing(1)
+        result = "\n".join(chunks)
+        self.assertIn("Akıllı sabah özeti", result)
+        self.assertIn("Kritik gelişmeler", result)
+        self.assertIn("web kaynaklı", result)
+        self.assertIn("#Türkiye", result)
+        self.assertIn("https://example.com", result)
+        prompt = grounded.await_args.args[1]
+        self.assertIn("Türkiye ve dünya gündem etiketlerini", prompt)
+        self.assertIn("kesin X sıralaması", prompt)
+
+    async def test_morning_briefing_prefers_official_x_api_when_configured(self):
+        grounded = AsyncMock(return_value=(
+            "🗞️ Kritik gelişmeler\n• Haber\n\n🎯 Günün odağı\n1. Spor",
+            [],
+        ))
+        with (
+            patch("bot.GEMINI_API_KEY", "test-key"),
+            patch("bot.X_BEARER_TOKEN", "official-token"),
+            patch("bot.build_today_summary", new=AsyncMock(return_value="☀️ Bugün")),
+            patch("bot.build_gemini_context", new=AsyncMock(return_value="Görev: Spor")),
+            patch("bot.generate_grounded_text", new=grounded),
             patch("bot.build_x_trends_summary", new=AsyncMock(return_value=(
                 "🔥 X gündemi\n🇹🇷 #Türkiye · #Gündem\n🌍 #World · #News"
             ))),
         ):
             chunks = await bot.build_morning_briefing(1)
         result = "\n".join(chunks)
-        self.assertIn("Akıllı sabah özeti", result)
-        self.assertIn("Kritik gelişmeler", result)
-        self.assertIn("#Türkiye", result)
-        self.assertIn("https://example.com", result)
+        self.assertIn("🔥 X gündemi", result)
+        self.assertNotIn("web kaynaklı", grounded.await_args.args[1])
 
 
 if __name__ == "__main__":

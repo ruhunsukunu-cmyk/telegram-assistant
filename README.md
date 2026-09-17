@@ -20,7 +20,7 @@ Telefonunuzdan 7/24 erişebileceğiniz, görevlerinizi ve notlarınızı tutan, 
 - 📅 **Telefon Takvimi:** Google Takvim'deki etkinlikleri salt okunur iCal akışıyla gösterir ve yaklaşınca Telegram bildirimi yollar.
 - 🤖 **Gemini Asistan:** Soruları yanıtlar, fikir üretir ve bekleyen görevler ile yakın takvimden yararlanarak gün planlamasına yardım eder.
 - 🌅 **Karar Odaklı Sabah Brifingi:** Her sabah hava, takvim, öncelikler ve kaynaklı kritik gelişmelerden kısa bir eylem planı çıkarır.
-- 🔥 **X Gündemi:** Resmî X API bağlandığında Türkiye ve dünyadaki en üst iki hashtag'i sabah özetine ekler.
+- 🔥 **X Gündemi:** Resmî X API bağlandığında Türkiye ve dünyadaki en üst iki hashtag'i kullanır; anahtar yoksa Gemini + Google Search ile doğrulanabilen etiketleri “web kaynaklı” olarak gösterir.
 - 🧭 **Sessiz Akıllı Kontrol:** Öğlen kontrolü, akşam özeti, haftalık değerlendirme ve etkinlik sonrası takip varsayılan olarak kapalıdır; Ayarlar'dan açılabilir.
 - 🧠 **Etkinlik Hazırlığı:** Toplantı, doktor, seyahat ve ödeme gibi etkinliklere uygun hazırlık önerisi ve tek dokunuşlu erteleme sunar.
 - 🌙 **Gün ve Hafta Kapanışı:** Akşam açık döngüleri gösterir; pazar günü tamamlanan işleri ve yaklaşan haftayı değerlendirir.
@@ -108,6 +108,10 @@ Notlar ve harcamalar bağlama eklenmez. Google'ın ücretsiz Gemini API katmanı
 1. X Developer Portal'da bir uygulama oluşturup Bearer Token alın.
 2. Anahtarı Railway servis değişkenlerine `X_BEARER_TOKEN` adıyla ekleyin.
 3. Bot Türkiye (`23424969`) ve dünya (`1`) sıralamasındaki ilk iki gerçek hashtag'i sabah özetinde gösterir.
+
+`X_BEARER_TOKEN` tanımlı değilse sabah özeti boş kalmaz: Gemini, Google Search ile
+doğrulayabildiği güncel etiketleri **“X'te öne çıkanlar (web kaynaklı)”** başlığıyla verir.
+Bu yedek sonuç resmî veya kesin X sıralaması değildir; doğrulanamayan etiketler üretilmez.
 
 X API ücretlendirmesi X hesabınıza bağlıdır. Token yoksa veya servis hata verirse bot
 uydurma trend üretmez; sabah özetinin kalan bölümleri normal çalışmaya devam eder.
