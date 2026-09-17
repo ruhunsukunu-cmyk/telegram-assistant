@@ -14,6 +14,8 @@ Telefonunuzdan 7/24 erişebileceğiniz, görevlerinizi ve notlarınızı tutan, 
 - 💾 **Kalıcı veri desteği:** PostgreSQL (`DATABASE_URL`) veya kalıcı disk üzerindeki SQLite (`DB_PATH`) ile bot yeniden başlasa bile kayıtlar korunur.
 - 🎛️ **İnteraktif Menü:** Mesaj yazmadan butonlarla yönetebileceğiniz modern Inline Keyboard arayüzü.
 - 🧭 **Sade ve proaktif ana ekran:** Günlük brifing, bildirim düzeni, takvim ve asistana soru özelliklerini öne çıkarır; kayıt araçlarını “Diğer” bölümünde toplar.
+- 👋 **İlk kullanım tanıtımı:** Yeni kullanıcıya botun amacını birkaç saniyede anlatan kısa bir karşılama gösterir; tanıtım daha sonra “Diğer” menüsünden tekrar açılabilir.
+- 🆕 **Güncelleme notları:** Son sürümde gelen yenilikleri bot içinden okunabilir şekilde listeler.
 - ✨ **Yetenek Rehberi:** “Diğer > Bot neler yapar?” ekranı bütün özellikleri tek yerde açıklar.
 - 📅 **Telefon Takvimi:** Google Takvim'deki etkinlikleri salt okunur iCal akışıyla gösterir ve yaklaşınca Telegram bildirimi yollar.
 - 🤖 **Gemini Asistan:** Soruları yanıtlar, fikir üretir ve bekleyen görevler ile yakın takvimden yararlanarak gün planlamasına yardım eder.
@@ -117,6 +119,7 @@ Telegram'da kendi botunuza gidin ve **/start** yazarak asistanınızı kullanmay
 | `/sor <soru>` | Gemini kişisel asistana soru sorar | `/sor Bugün neye öncelik vermeliyim?` |
 | `/sabahozeti` | Kaynaklı akıllı sabah özetini hemen hazırlar | `/sabahozeti` |
 | `/hakkinda` | Botun yapabildiği bütün işleri kategoriler halinde gösterir | `/hakkinda` |
+| `/yenilikler` | Son sürümün güncelleme notlarını gösterir | `/yenilikler` |
 | `/hava <şehir>` | İstenen şehrin canlı hava durumunu getirir | `/hava ankara` |
 | `/sehir <şehir>` | Menüde kullanılacak varsayılan şehri kaydeder | `/sehir Ankara` |
 | `/bugun` | Hava, görev ve sıradaki hatırlatıcı özetini gösterir | `/bugun` |

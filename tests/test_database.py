@@ -159,6 +159,12 @@ class DatabaseTests(unittest.TestCase):
         database.set_notification_enabled(1, "midday", False)
         self.assertFalse(database.notification_enabled(1, "midday"))
 
+    def test_onboarding_is_shown_only_once(self):
+        self.assertFalse(database.has_seen_onboarding(1))
+        database.mark_onboarding_seen(1)
+        database.mark_onboarding_seen(1)
+        self.assertTrue(database.has_seen_onboarding(1))
+
     def test_delete_user_data_removes_owned_records(self):
         database.add_note(1, "özel not")
         database.add_task(1, "özel görev")

@@ -14,6 +14,7 @@ MIGRATION_TABLES = (
     "reminder_rules", "habits", "habit_logs", "expenses", "calendar_events",
     "user_preferences", "daily_summaries", "budgets", "calendar_notifications",
     "assistant_alerts", "assistant_feedback", "task_activity", "notification_preferences",
+    "user_onboarding",
 )
 
 
@@ -86,6 +87,7 @@ def init_db():
         cursor.execute(f"CREATE TABLE IF NOT EXISTS assistant_feedback (id {id_column}, user_id BIGINT NOT NULL, alert_id BIGINT NULL, action TEXT NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)")
         cursor.execute(f"CREATE TABLE IF NOT EXISTS task_activity (id {id_column}, user_id BIGINT NOT NULL, task_id BIGINT NOT NULL, action TEXT NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)")
         cursor.execute("CREATE TABLE IF NOT EXISTS notification_preferences (user_id BIGINT NOT NULL, kind TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 1, PRIMARY KEY (user_id, kind))")
+        cursor.execute("CREATE TABLE IF NOT EXISTS user_onboarding (user_id BIGINT PRIMARY KEY, seen_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)")
         conn.commit()
 
 
@@ -522,6 +524,23 @@ def set_notification_enabled(user_id, kind, enabled):
         conn.commit()
 
 
+def has_seen_onboarding(user_id):
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(_sql("SELECT 1 FROM user_onboarding WHERE user_id = ?"), (user_id,))
+        return cursor.fetchone() is not None
+
+
+def mark_onboarding_seen(user_id):
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            _sql("INSERT INTO user_onboarding (user_id) VALUES (?) ON CONFLICT(user_id) DO NOTHING"),
+            (user_id,),
+        )
+        conn.commit()
+
+
 def export_user_data(user_id):
     data = {}
     with get_db() as conn:
@@ -536,6 +555,7 @@ def export_user_data(user_id):
             "assistant_feedback": "SELECT action, created_at FROM assistant_feedback WHERE user_id = ?",
             "task_activity": "SELECT task_id, action, created_at FROM task_activity WHERE user_id = ?",
             "notification_preferences": "SELECT kind, enabled FROM notification_preferences WHERE user_id = ?",
+            "user_onboarding": "SELECT seen_at FROM user_onboarding WHERE user_id = ?",
         }.items():
             cursor.execute(_sql(query), (user_id,))
             data[name] = [dict(row) for row in cursor.fetchall()]
@@ -553,6 +573,7 @@ def delete_user_data(user_id):
         cursor.execute(_sql("DELETE FROM assistant_alerts WHERE user_id = ?"), (user_id,))
         cursor.execute(_sql("DELETE FROM task_activity WHERE user_id = ?"), (user_id,))
         cursor.execute(_sql("DELETE FROM notification_preferences WHERE user_id = ?"), (user_id,))
+        cursor.execute(_sql("DELETE FROM user_onboarding WHERE user_id = ?"), (user_id,))
         for table in ("notes", "tasks", "reminders", "habits", "expenses", "calendar_events", "user_settings", "user_preferences", "daily_summaries", "budgets"):
             cursor.execute(_sql(f"DELETE FROM {table} WHERE user_id = ?"), (user_id,))
         conn.commit()

@@ -107,6 +107,34 @@ MAIN_MENU_TEXT = (
     "Bugünkü brifingini açabilir veya bana bir şey sorabilirsin 👇"
 )
 
+INTRO_TEXT = (
+    "👋 *Ben günlük yaşam asistanıyım.*\n\n"
+    "🌅 Sabah bilmen gerekenleri kısa bir brifing halinde getiririm.\n"
+    "📅 Takvimini takip eder, yaklaşan etkinliklere hazırlanmanı sağlarım.\n"
+    "🧭 Çakışmaları ve geciken önemli işleri fark ederim.\n"
+    "🌙 Akşam günü kapatır, haftaya hazırlanmanda yardımcı olurum.\n"
+    "🤖 İstersen Gemini desteğiyle sorularını yanıtlarım.\n\n"
+    "Gereksiz yere yazmam; yalnızca işine yarayacak bir şey olduğunda haber veririm."
+)
+
+RELEASE_NOTES_TEXT = (
+    "🆕 *Güncelleme notları*\n"
+    "━━━━━━━━━━━━━━━━━━━━━\n"
+    "*v2.1 · Proaktif asistan*\n"
+    "• İlk kullanım için kısa tanıtım eklendi\n"
+    "• Güncelleme notları bölümü eklendi\n\n"
+    "*v2.0 · Günlük kurmay*\n"
+    "• Sabah brifingi sadeleştirildi\n"
+    "• Akıllı öğlen kontrolü, akşam kapanışı ve haftalık değerlendirme eklendi\n"
+    "• Takvim çakışması, geciken görev ve etkinlik hazırlığı desteği geldi\n"
+    "• Bildirimleri ayrı ayrı açıp kapatma özelliği eklendi\n"
+    "• Hatırlatıcılara tamamla ve ertele butonları eklendi\n"
+    "• Görsel panel kaldırılarak bot arayüzü sadeleştirildi\n\n"
+    "*v1.0 · Temel asistan*\n"
+    "• Görev, not, hatırlatıcı, takvim, hava ve piyasa araçları\n"
+    "• Google Takvim ve Gemini bağlantısı"
+)
+
 
 def get_main_keyboard():
     """Bilgi ve bildirim odaklı sade ana menü."""
@@ -142,8 +170,22 @@ def get_more_keyboard():
             InlineKeyboardButton("📝 Notlar", callback_data="btn_notes"),
             InlineKeyboardButton("✨ Bot neler yapar?", callback_data="btn_about"),
         ],
+        [
+            InlineKeyboardButton("👋 Kısa tanıtım", callback_data="btn_intro"),
+            InlineKeyboardButton("🆕 Güncelleme notları", callback_data="btn_updates"),
+        ],
         [InlineKeyboardButton("❓ Yardım", callback_data="btn_help")],
         [InlineKeyboardButton("‹ Ana ekran", callback_data="btn_home")],
+    ])
+
+
+def get_intro_keyboard():
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("🌅 Brifingi göster", callback_data="btn_briefing")],
+        [
+            InlineKeyboardButton("✨ Tüm özellikler", callback_data="btn_about"),
+            InlineKeyboardButton("🚀 Başlayalım", callback_data="btn_home"),
+        ],
     ])
 
 
@@ -242,6 +284,15 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     name = user.first_name if user else "Dostum"
 
+    if user and not db.has_seen_onboarding(user.id):
+        db.mark_onboarding_seen(user.id)
+        await update.message.reply_text(
+            f"*{escape_markdown(name)}*, hoş geldin!*\n\n{INTRO_TEXT}",
+            parse_mode="Markdown",
+            reply_markup=get_intro_keyboard(),
+        )
+        return
+
     welcome_text = f"👋 Merhaba *{escape_markdown(name)}*!\n\n{MAIN_MENU_TEXT}"
     await update.message.reply_text(
         welcome_text,
@@ -252,6 +303,10 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def menu_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await show_panel(update, MAIN_MENU_TEXT, get_main_keyboard())
+
+
+async def updates_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await show_panel(update, RELEASE_NOTES_TEXT, get_back_keyboard())
 
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1060,6 +1115,7 @@ async def initialize_app(app):
         BotCommand("takvim", "Yaklaşan etkinlikleri göster"),
         BotCommand("hatirlaticilar", "Bekleyen hatırlatıcılarını görüntüle"),
         BotCommand("durum", "Botun çalışma durumunu göster"),
+        BotCommand("yenilikler", "Son güncellemeleri göster"),
         BotCommand("hakkinda", "Botun yapabildiği her şeyi göster"),
         BotCommand("help", "Yardım merkezini aç"),
     ])
@@ -1654,6 +1710,12 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             get_more_keyboard(),
         )
 
+    elif data == "btn_intro":
+        await show_panel(update, INTRO_TEXT, get_intro_keyboard())
+
+    elif data == "btn_updates":
+        await updates_command(update, context)
+
     elif data == "btn_finance":
         await query.edit_message_text("💹 Piyasa özeti hazırlanıyor…")
         res = await get_market_rates()
@@ -2092,6 +2154,7 @@ def main():
     app.add_handler(CommandHandler("menu", menu_command))
     app.add_handler(CommandHandler("sor", ask_command))
     app.add_handler(CommandHandler("sabahozeti", morning_summary_command))
+    app.add_handler(CommandHandler("yenilikler", updates_command))
     app.add_handler(CommandHandler("hakkinda", about_command))
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("hava", weather_command))

@@ -35,7 +35,17 @@ class UiTests(unittest.TestCase):
         self.assertTrue({
             "btn_weather", "btn_finance", "btn_reminders", "btn_quick_add",
             "btn_habits", "btn_expenses", "btn_notes", "btn_about", "btn_help",
+            "btn_intro", "btn_updates",
         }.issubset(callbacks))
+
+    def test_intro_is_short_and_explains_the_bot(self):
+        self.assertIn("günlük yaşam asistanıyım", bot.INTRO_TEXT)
+        self.assertIn("Gereksiz yere yazmam", bot.INTRO_TEXT)
+        self.assertLess(len(bot.INTRO_TEXT), 700)
+
+    def test_release_notes_explain_current_version(self):
+        self.assertIn("v2.1", bot.RELEASE_NOTES_TEXT)
+        self.assertIn("Güncelleme notları", bot.RELEASE_NOTES_TEXT)
 
     def test_alerts_panel_prioritizes_proactive_features(self):
         markup = bot.get_alerts_keyboard().to_dict()
