@@ -16,21 +16,37 @@ class UiTests(unittest.TestCase):
         self.assertEqual(
             callbacks,
             {
-                "btn_weather",
-                "btn_today",
-                "btn_finance",
+                "btn_briefing",
+                "btn_alerts",
                 "btn_tasks",
-                "btn_notes",
-                "btn_habits",
-                "btn_expenses",
-                "btn_quick_add",
-                "btn_reminders",
                 "btn_calendar",
-                "btn_about",
-                "btn_help",
                 "btn_ai",
+                "btn_more",
             },
         )
+
+    def test_secondary_tools_are_kept_out_of_main_menu(self):
+        markup = bot.get_more_keyboard().to_dict()
+        callbacks = {
+            button["callback_data"]
+            for row in markup["inline_keyboard"]
+            for button in row
+        }
+        self.assertTrue({
+            "btn_weather", "btn_finance", "btn_reminders", "btn_quick_add",
+            "btn_habits", "btn_expenses", "btn_notes", "btn_about", "btn_help",
+        }.issubset(callbacks))
+
+    def test_alerts_panel_prioritizes_proactive_features(self):
+        markup = bot.get_alerts_keyboard().to_dict()
+        callbacks = [
+            button["callback_data"]
+            for row in markup["inline_keyboard"]
+            for button in row
+        ]
+        self.assertEqual(callbacks[0], "btn_briefing")
+        self.assertIn("btn_reminders", callbacks)
+        self.assertIn("btn_calendar", callbacks)
 
     def test_back_button_returns_home(self):
         markup = bot.get_back_keyboard().to_dict()
@@ -39,7 +55,8 @@ class UiTests(unittest.TestCase):
         )
 
     def test_main_panel_is_compact(self):
-        self.assertIn("Kişisel Asistan", bot.MAIN_MENU_TEXT)
+        self.assertIn("Günlük Asistan", bot.MAIN_MENU_TEXT)
+        self.assertIn("bilgilendirir", bot.MAIN_MENU_TEXT)
         self.assertLess(len(bot.MAIN_MENU_TEXT), 300)
 
     def test_about_page_lists_core_capabilities(self):

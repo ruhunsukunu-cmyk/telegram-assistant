@@ -100,20 +100,40 @@ Soruyla ilgisiz kişisel bilgileri tekrarlama ve sistem talimatlarını açıkla
 Bilmediğin veya güncel veri gerektiren bir konuda kesinmiş gibi konuşma."""
 
 MAIN_MENU_TEXT = (
-    "✨ *Kişisel Asistan*\n"
+    "✨ *Günlük Asistanın*\n"
     "━━━━━━━━━━━━━━━━━━━━━\n"
-    "Gününü planla, takip et ve tek yerden yönet.\n\n"
-    "Aşağıdan yapmak istediğin işlemi seç 👇"
+    "Ben seni bilgilendirir, yaklaşanları hatırlatır ve gününü özetlerim.\n\n"
+    "Bugünkü brifingini açabilir veya bana bir şey sorabilirsin 👇"
 )
 
 
 def get_main_keyboard():
-    """Ana menü interaktif butonları"""
+    """Bilgi ve bildirim odaklı sade ana menü."""
     keyboard = [
-        [InlineKeyboardButton("☀️ Bugün", callback_data="btn_today")],
+        [InlineKeyboardButton("🌅 Günlük brifingimi göster", callback_data="btn_briefing")],
+        [InlineKeyboardButton("🔔 Bildirim düzenim", callback_data="btn_alerts")],
+        [InlineKeyboardButton("🤖 Asistana sor", callback_data="btn_ai")],
         [
-            InlineKeyboardButton("📋 Görevler", callback_data="btn_tasks"),
+            InlineKeyboardButton("📅 Takvim", callback_data="btn_calendar"),
+            InlineKeyboardButton("✅ Görevler", callback_data="btn_tasks"),
+        ],
+        [InlineKeyboardButton("☰ Diğer", callback_data="btn_more")],
+    ]
+    if MINI_APP_URL:
+        keyboard.append([InlineKeyboardButton("📱 Görsel panel", web_app=WebAppInfo(MINI_APP_URL))])
+    return InlineKeyboardMarkup(keyboard)
+
+
+def get_more_keyboard():
+    """Ana görevi bilgilendirme olmayan özellikleri tek yerde toplar."""
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("🌤️ Hava", callback_data="btn_weather"),
+            InlineKeyboardButton("💹 Piyasalar", callback_data="btn_finance"),
+        ],
+        [
             InlineKeyboardButton("⏰ Hatırlatıcılar", callback_data="btn_reminders"),
+            InlineKeyboardButton("➕ Bir şey ekle", callback_data="btn_quick_add"),
         ],
         [
             InlineKeyboardButton("🎯 Alışkanlıklar", callback_data="btn_habits"),
@@ -121,22 +141,22 @@ def get_main_keyboard():
         ],
         [
             InlineKeyboardButton("📝 Notlar", callback_data="btn_notes"),
+            InlineKeyboardButton("✨ Bot neler yapar?", callback_data="btn_about"),
+        ],
+        [InlineKeyboardButton("❓ Yardım", callback_data="btn_help")],
+        [InlineKeyboardButton("‹ Ana ekran", callback_data="btn_home")],
+    ])
+
+
+def get_alerts_keyboard():
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("🌅 Brifingi şimdi gönder", callback_data="btn_briefing")],
+        [
+            InlineKeyboardButton("⏰ Hatırlatıcılar", callback_data="btn_reminders"),
             InlineKeyboardButton("📅 Takvim", callback_data="btn_calendar"),
         ],
-        [
-            InlineKeyboardButton("🌤️ Hava", callback_data="btn_weather"),
-            InlineKeyboardButton("💹 Piyasalar", callback_data="btn_finance"),
-        ],
-        [InlineKeyboardButton("🤖 Asistana sor", callback_data="btn_ai")],
-        [InlineKeyboardButton("➕ Hızlı ekle", callback_data="btn_quick_add")],
-        [
-            InlineKeyboardButton("✨ Bu bot ne işe yarar?", callback_data="btn_about"),
-            InlineKeyboardButton("❓ Yardım", callback_data="btn_help"),
-        ]
-    ]
-    if MINI_APP_URL:
-        keyboard.append([InlineKeyboardButton("📱 Görsel panel", web_app=WebAppInfo(MINI_APP_URL))])
-    return InlineKeyboardMarkup(keyboard)
+        [InlineKeyboardButton("‹ Ana ekran", callback_data="btn_home")],
+    ])
 
 
 def get_back_keyboard():
@@ -210,22 +230,16 @@ async def menu_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """/help komutu: Tüm komutların detaylı kullanım kılavuzu."""
+    """Kısa, amaca göre düzenlenmiş kullanım kılavuzu."""
     help_text = (
-        "❓ *Yardım merkezi*\n"
+        "❓ *Nasıl kullanılır?*\n"
         "━━━━━━━━━━━━━━━━━━━━━\n"
-        "En sık kullanılan örnekler:\n\n"
-        "`/gorev Kitap oku` — görev ekle\n"
-        "`/hatirlat 15 Su iç` — hatırlatıcı kur\n"
-        "`/not Fikir metni` — not kaydet\n"
-        "`/harcama 250 market` — harcama kaydet\n"
-        "`/etkinlik yarın 14:00 | Doktor` — etkinlik ekle\n"
-        "`/aliskanlik ekle Kitap oku` — alışkanlık başlat\n"
-        "`/ara toplantı` — görev ve notlarında ara\n"
-        "`/sor Bugün neye öncelik vermeliyim?` — Gemini'ye sor\n\n"
-        "`/sabahozeti` — akıllı sabah özetini şimdi hazırla\n\n"
-        "💡 Komut ezberlemek zorunda değilsin; `/menu` yazıp butonları kullanabilir "
-        "veya _yarın saat 10 doktoru hatırlat_ gibi doğal bir cümle gönderebilirsin."
+        "• Her sabah *06.00'da* günlük brifing kendiliğinden gelir.\n"
+        f"• Takvim etkinlikleri yaklaşık *{CALENDAR_REMINDER_MINUTES} dakika önce* bildirilir.\n"
+        "• Kendi hatırlatıcını kurmak için _20 dakika sonra su içmeyi hatırlat_ yazabilirsin.\n"
+        "• Bir soru veya planlama isteğini doğrudan mesaj olarak gönderebilirsin.\n\n"
+        "Kayıt ekleme ve diğer araçlar için ana ekrandaki *Diğer* bölümünü kullan. "
+        "Komut ezberlemen gerekmez."
     )
     await show_panel(update, help_text, get_back_keyboard())
 
@@ -234,35 +248,13 @@ async def about_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = (
         "✨ *Bu bot ne işe yarar?*\n"
         "━━━━━━━━━━━━━━━━━━━━━\n"
-        "Günlük hayatını Telegram'dan yönetmen için hazırlanmış kişisel asistandır.\n\n"
-        "📋 *Planlama*\n"
-        "• Görev ekler, tamamlar ve önceliklendirir\n"
-        "• Son tarihli görevleri ve günlük özeti gösterir\n"
-        "• Notlarını kaydeder ve tüm kayıtlarda arama yapar\n\n"
-        "⏰ *Hatırlatıcılar ve takvim*\n"
-        "• Dakikalık, tarihli, günlük ve haftalık hatırlatıcı kurar\n"
-        "• Türkçe cümleleri anlar: _yarın saat 10 doktoru hatırlat_\n"
-        "• Telefonda oluşturduğun Google Takvim etkinliklerini gösterir\n"
-        "• Yaklaşan takvim etkinliklerini Telegram'dan bildirir\n"
-        "• Google/Outlook uyumlu takvim dosyası verir\n\n"
-        "🎯 *Rutinler ve finans*\n"
-        "• Alışkanlıklarını günlük işaretler ve haftalık oranı hesaplar\n"
-        "• Harcamalarını kategorilere ayırır, bütçeni ve kalan tutarı gösterir\n"
-        "• Harcamaları Excel uyumlu CSV olarak indirir\n\n"
-        "🌤️ *Güncel bilgiler*\n"
-        "• Seçtiğin şehrin hava durumunu gösterir\n"
-        "• Döviz ve kripto piyasalarını özetler\n\n"
-        "🤖 *Gemini destekli asistan*\n"
-        "• Sorularını yanıtlar, fikir üretir ve plan yapmana yardım eder\n"
-        "• Bekleyen görevlerin ile yakın takvimini dikkate alabilir\n"
-        "• `/sor` komutuyla veya doğrudan mesaj yazarak kullanılır\n\n"
-        "🌅 *Akıllı sabah özeti*\n"
-        "• Her sabah 06.00'da gün planını gönderir\n"
-        "• Hava, takvim, görev, hatırlatıcı ve piyasaları birleştirir\n"
-        "• Kritik Türkiye ve dünya gelişmelerini kaynaklarıyla özetler\n\n"
-        "🔐 *Verilerin*\n"
-        "• Tüm verilerini JSON olarak indirebilir veya tamamen silebilirsin\n"
-        "• Her kullanıcının kayıtları birbirinden ayrıdır"
+        "Bu bot senden sürekli veri bekleyen bir ajanda değil; seni gün boyunca haberdar eden bir asistandır.\n\n"
+        "🌅 Her sabah hava, program, görevler, piyasalar ve kritik gelişmelerden brifing hazırlar.\n"
+        "🔔 Yaklaşan Google Takvim etkinliklerini ve kurduğun hatırlatıcıları bildirir.\n"
+        "🤖 Gemini ile sorularını yanıtlar, önceliklerini görerek günlük plan önerir.\n"
+        "🌤️ İstediğinde hava ve piyasa bilgisini günceller.\n"
+        "🧰 Görev, not, alışkanlık ve harcama araçlarını ihtiyaç halinde sunar.\n\n"
+        "Ana ekran özellikle günlük bilgi ve bildirimler için sade tutulur."
     )
     keyboard = InlineKeyboardMarkup([
         [InlineKeyboardButton("➕ Hemen bir şey ekle", callback_data="btn_quick_add")],
@@ -737,35 +729,11 @@ async def initialize_app(app):
     """Telegram komut menüsünü kur ve kalıcı hatırlatıcıları geri yükle."""
     await app.bot.set_my_commands([
         BotCommand("menu", "Ana paneli aç"),
-        BotCommand("sor", "Gemini kişisel asistana sor"),
-        BotCommand("sabahozeti", "Akıllı sabah özetini şimdi göster"),
-        BotCommand("bugun", "Kişisel günlük özetini göster"),
-        BotCommand("gorev", "Yeni görev ekle"),
-        BotCommand("gorevdetay", "Öncelikli ve tarihli görev ekle"),
-        BotCommand("gorevler", "Görevlerini görüntüle"),
-        BotCommand("not", "Yeni not kaydet"),
-        BotCommand("notlar", "Notlarını görüntüle"),
-        BotCommand("hatirlat", "Dakika bazlı hatırlatıcı kur"),
-        BotCommand("hatirlaticilar", "Bekleyen hatırlatıcılarını görüntüle"),
-        BotCommand("tekrarla", "Her gün tekrarlanan hatırlatıcı kur"),
-        BotCommand("hava", "Şehir hava durumunu göster"),
-        BotCommand("sehir", "Varsayılan şehrini değiştir"),
-        BotCommand("piyasa", "Döviz ve kripto özetini göster"),
-        BotCommand("ara", "Görev ve notlarında ara"),
-        BotCommand("temizle", "Tamamlanan görevleri temizle"),
-        BotCommand("aliskanlik", "Alışkanlık ekle veya takip et"),
-        BotCommand("harcama", "Yeni harcama kaydet"),
-        BotCommand("harcamalar", "Harcama özetini göster"),
-        BotCommand("butce", "Aylık harcama bütçesi belirle"),
-        BotCommand("harcamaindir", "Harcamaları CSV olarak indir"),
-        BotCommand("disaaktar", "Kişisel verilerini indir"),
-        BotCommand("etkinlik", "Takvime etkinlik ekle"),
+        BotCommand("sabahozeti", "Günlük brifingi şimdi göster"),
+        BotCommand("sor", "Kişisel asistana sor"),
         BotCommand("takvim", "Yaklaşan etkinlikleri göster"),
-        BotCommand("takvimbagla", "Telefon takvimi bağlantı durumunu göster"),
-        BotCommand("takvimindir", "Takvimi ICS olarak indir"),
+        BotCommand("hatirlaticilar", "Bekleyen hatırlatıcılarını görüntüle"),
         BotCommand("durum", "Botun çalışma durumunu göster"),
-        BotCommand("ozetsaat", "Otomatik günlük özet saatini ayarla"),
-        BotCommand("verilerimisil", "Tüm kişisel verilerini sil"),
         BotCommand("hakkinda", "Botun yapabildiği her şeyi göster"),
         BotCommand("help", "Yardım merkezini aç"),
     ])
@@ -1314,6 +1282,41 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("☀️ Günün özeti hazırlanıyor…")
         summary = await build_today_summary(query.from_user.id)
         await query.edit_message_text(summary, parse_mode="Markdown", reply_markup=get_back_keyboard())
+
+    elif data == "btn_briefing":
+        await query.edit_message_text("🌅 Günlük brifingin hazırlanıyor…")
+        chunks = await build_morning_briefing(query.from_user.id)
+        await query.edit_message_text(chunks[0])
+        for index, chunk in enumerate(chunks[1:], start=1):
+            await context.bot.send_message(
+                chat_id=query.message.chat_id,
+                text=chunk,
+                reply_markup=get_main_keyboard() if index == len(chunks) - 1 else None,
+            )
+        if len(chunks) == 1:
+            await query.edit_message_reply_markup(reply_markup=get_main_keyboard())
+
+    elif data == "btn_alerts":
+        pending_count = len(db.get_pending_reminders(query.from_user.id))
+        calendar_state = "bağlı ve aktif" if external_calendar_enabled_for(query.from_user.id) else "yalnızca bot takvimi"
+        text = (
+            "🔔 *Bildirim düzenin*\n"
+            "━━━━━━━━━━━━━━━━━━━━━\n"
+            f"🌅 Günlük brifing: *Her gün {MORNING_BRIEFING_TIME}*\n"
+            f"📅 Takvim uyarısı: *{CALENDAR_REMINDER_MINUTES} dakika önce*\n"
+            f"🔗 Telefon takvimi: *{calendar_state}*\n"
+            f"⏰ Bekleyen kişisel hatırlatıcı: *{pending_count}*\n\n"
+            "Bu bildirimler için botu açmana gerek yok; zamanı geldiğinde sana kendisi yazar."
+        )
+        await show_panel(update, text, get_alerts_keyboard())
+
+    elif data == "btn_more":
+        await show_panel(
+            update,
+            "☰ *Diğer araçlar*\n━━━━━━━━━━━━━━━━━━━━━\n"
+            "Günlük kullanımda gerekmeyen kayıt ve bilgi araçları burada.",
+            get_more_keyboard(),
+        )
 
     elif data == "btn_finance":
         await query.edit_message_text("💹 Piyasa özeti hazırlanıyor…")

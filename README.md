@@ -13,7 +13,8 @@ Telefonunuzdan 7/24 erişebileceğiniz, görevlerinizi ve notlarınızı tutan, 
 - ⏰ **Zaman Ayarlı Hatırlatıcı:** `/hatirlat 15 Çayı ocaktan al` dediğinizde, tam 15 dakika sonra bot size bildirim gönderir.
 - 💾 **Kalıcı veri desteği:** PostgreSQL (`DATABASE_URL`) veya kalıcı disk üzerindeki SQLite (`DB_PATH`) ile bot yeniden başlasa bile kayıtlar korunur.
 - 🎛️ **İnteraktif Menü:** Mesaj yazmadan butonlarla yönetebileceğiniz modern Inline Keyboard arayüzü.
-- ✨ **Yetenek Rehberi:** Ana menüdeki “Bu bot ne işe yarar?” ekranı bütün özellikleri tek yerde açıklar.
+- 🧭 **Sade ve proaktif ana ekran:** Günlük brifing, bildirim düzeni, takvim ve asistana soru özelliklerini öne çıkarır; kayıt araçlarını “Diğer” bölümünde toplar.
+- ✨ **Yetenek Rehberi:** “Diğer > Bot neler yapar?” ekranı bütün özellikleri tek yerde açıklar.
 - 📅 **Telefon Takvimi:** Google Takvim'deki etkinlikleri salt okunur iCal akışıyla gösterir ve yaklaşınca Telegram bildirimi yollar.
 - 🤖 **Gemini Asistan:** Soruları yanıtlar, fikir üretir ve bekleyen görevler ile yakın takvimden yararlanarak gün planlamasına yardım eder.
 - 🌅 **Akıllı Sabah Özeti:** Her sabah hava, takvim, görevler, piyasalar, kaynaklı kritik gelişmeler ve kişisel gün planı gönderir.
