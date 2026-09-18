@@ -88,7 +88,7 @@ NEWS_DIGEST_TIME = os.getenv("NEWS_DIGEST_TIME", "06:10").strip()
 MIDDAY_CHECK_TIME = os.getenv("MIDDAY_CHECK_TIME", "13:30").strip()
 EVENING_SUMMARY_TIME = os.getenv("EVENING_SUMMARY_TIME", "21:00").strip()
 WEEKLY_REVIEW_TIME = os.getenv("WEEKLY_REVIEW_TIME", "18:00").strip()
-APP_VERSION = "2.6.1"
+APP_VERSION = "2.7"
 MORNING_BRIEFING_TEST_ON_START = os.getenv(
     "MORNING_BRIEFING_TEST_ON_START", ""
 ).strip().lower() in {"1", "true", "yes", "on"}
@@ -119,6 +119,10 @@ INTRO_TEXT = (
 RELEASE_NOTES_TEXT = (
     "🆕 *Güncelleme notları*\n"
     "━━━━━━━━━━━━━━━━━━━━━\n"
+    "*v2.7 · Düzenlenebilir günlük rutinler*\n"
+    "• Günlük rutinler tek ekrandan eklenebilir, düzenlenebilir ve silinebilir\n"
+    "• Saat ve hatırlatma metni botun içinden değiştirilebilir\n"
+    "• Silinen varsayılan rutinlerin yeniden oluşması engellendi\n\n"
     "*v2.6.1 · Rutin düzeltmesi*\n"
     "• 08.00 hatırlatıcısı B12 olarak düzeltildi\n\n"
     "*v2.6 · Günlük sağlık ve gece rutini*\n"
@@ -238,7 +242,7 @@ def get_alerts_keyboard(user_id=None):
         [toggle("weekly", "Haftalık")],
         [toggle("calendar", "Takvim uyarıları"), toggle("followup", "Etkinlik sonrası")],
         [
-            InlineKeyboardButton("⏰ Hatırlatıcılar", callback_data="btn_reminders"),
+            InlineKeyboardButton("🔁 Günlük rutinler", callback_data="btn_daily_routines"),
             InlineKeyboardButton("📅 Takvim", callback_data="btn_calendar"),
         ],
         [InlineKeyboardButton("‹ Ayarlar", callback_data="btn_settings")],
@@ -287,6 +291,17 @@ def parse_quick_reminder(text):
     if not 0 < minutes <= 525_600 or not message:
         return None
     return minutes, message
+
+
+def parse_daily_routine(text):
+    """Parse a daily routine in the user-friendly `HH:MM | message` format."""
+    if "|" not in text:
+        return None
+    time_text, message = (part.strip() for part in text.split("|", 1))
+    match = re.fullmatch(r"([01]?\d|2[0-3])[:.]([0-5]\d)", time_text)
+    if not match or not message:
+        return None
+    return int(match.group(1)), int(match.group(2)), message[:500]
 
 
 def get_webhook_config(token=TOKEN, base_url=WEBHOOK_BASE_URL):
@@ -982,6 +997,10 @@ def ensure_personal_daily_routines():
     if not (CALENDAR_USER_ID and CALENDAR_CHAT_ID):
         return []
 
+    seed_key = f"personal-daily-routines-seeded-{CALENDAR_USER_ID}"
+    if db.get_app_metadata(seed_key):
+        return []
+
     morning_message = "B12 hapını al."
     legacy_morning_message = "Magnezyum hapını al."
     legacy_id = db.find_active_recurring_reminder(
@@ -1023,6 +1042,7 @@ def ensure_personal_daily_routines():
         )
         db.set_reminder_recurrence(reminder_id, CALENDAR_USER_ID, "daily")
         created.append(reminder_id)
+    db.set_app_metadata(seed_key, datetime.now(timezone.utc).isoformat())
     return created
 
 
@@ -1332,9 +1352,9 @@ async def send_release_announcement(app):
     text = (
         f"🎉 *Yeni güncelleme yayında · v{APP_VERSION}*\n"
         "━━━━━━━━━━━━━━━━━━\n"
-        "• 08.00 hatırlatıcısı B12 olarak düzeltildi\n"
-        "• 18.00 Omega-3 hatırlatıcısı eklendi\n"
-        "• 22.00 uyku öncesi rutini eklendi\n\n"
+        "• Günlük rutinlerini botun içinden ekleyebilir, düzenleyebilir ve silebilirsin\n"
+        "• Saat ve hatırlatma metni artık kolayca değiştirilebilir\n"
+        "• Silinen rutinler yeniden oluşmaz\n\n"
         "Ayrıntılar için /yenilikler"
     )
     try:
@@ -1359,6 +1379,7 @@ async def initialize_app(app):
         BotCommand("sor", "Kişisel asistana sor"),
         BotCommand("takvim", "Yaklaşan etkinlikleri göster"),
         BotCommand("hatirlaticilar", "Bekleyen hatırlatıcılarını görüntüle"),
+        BotCommand("rutinler", "Her gün tekrarlanan rutinlerini düzenle"),
         BotCommand("durum", "Botun çalışma durumunu göster"),
         BotCommand("yenilikler", "Son güncellemeleri göster"),
         BotCommand("hakkinda", "Botun yapabildiği her şeyi göster"),
@@ -1446,6 +1467,67 @@ def schedule_reminder(context, user_id, chat_id, minutes, message):
     return reminder_id
 
 
+def schedule_daily_routine(context, user_id, chat_id, hour, minute, message, reminder_id=None):
+    """Create or update one daily reminder and replace its in-memory job."""
+    now_local = datetime.now(LOCAL_TIMEZONE)
+    first = now_local.replace(hour=hour, minute=minute, second=0, microsecond=0)
+    if first <= now_local:
+        first += timedelta(days=1)
+
+    if reminder_id is None:
+        reminder_id = db.add_reminder(user_id, chat_id, message, first)
+        db.set_reminder_recurrence(reminder_id, user_id, "daily")
+    elif not db.update_daily_reminder(reminder_id, user_id, message, first):
+        return None
+
+    for job in context.job_queue.get_jobs_by_name(f"reminder-{reminder_id}"):
+        job.schedule_removal()
+    context.job_queue.run_daily(
+        reminder_callback,
+        time=first.timetz(),
+        chat_id=chat_id,
+        data={"id": reminder_id, "message": message, "recurrence": "daily"},
+        name=f"reminder-{reminder_id}",
+    )
+    return reminder_id
+
+
+async def show_daily_routines(update, context):
+    """Show a compact editor for reminders that repeat every day."""
+    routines = sorted(
+        db.get_daily_reminders(update.effective_user.id),
+        key=lambda item: (
+            _as_utc(item["due_at"]).astimezone(LOCAL_TIMEZONE).hour,
+            _as_utc(item["due_at"]).astimezone(LOCAL_TIMEZONE).minute,
+        ),
+    )
+    text = "🔁 *Günlük rutinlerin*\n━━━━━━━━━━━━━━━━━━━━━\n"
+    keyboard = []
+    if not routines:
+        text += "Henüz günlük rutinin yok."
+    else:
+        text += "Saatine veya adına dokunarak düzenleyebilirsin.\n"
+        for index, routine in enumerate(routines, 1):
+            due_at = _as_utc(routine["due_at"]).astimezone(LOCAL_TIMEZONE)
+            message = str(routine["message"])
+            text += f"\n*{index}.* {due_at.strftime('%H:%M')} · {escape_markdown(message)}"
+            short_message = message if len(message) <= 24 else message[:23] + "…"
+            keyboard.append([
+                InlineKeyboardButton(
+                    f"✏️ {due_at.strftime('%H:%M')} · {short_message}",
+                    callback_data=f"edit_daily_routine_{routine['id']}",
+                ),
+                InlineKeyboardButton(
+                    "🗑️", callback_data=f"ask_delete_daily_routine_{routine['id']}"
+                ),
+            ])
+    keyboard.extend([
+        [InlineKeyboardButton("➕ Günlük rutin ekle", callback_data="add_daily_routine")],
+        [InlineKeyboardButton("‹ Hatırlatıcılar", callback_data="btn_reminders")],
+    ])
+    await show_panel(update, text, InlineKeyboardMarkup(keyboard))
+
+
 async def recurring_reminder_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     raw = " ".join(context.args).strip()
     if "|" not in raw:
@@ -1522,22 +1604,26 @@ async def remind_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def list_reminders_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Bekleyen hatırlatıcıları göster ve iptal etmeyi kolaylaştır."""
     user_id = update.effective_user.id
-    reminders = db.get_pending_reminders(user_id)
+    reminders = [
+        reminder for reminder in db.get_pending_reminders(user_id)
+        if db.get_reminder_recurrence(reminder["id"]) != "daily"
+    ]
 
     if not reminders:
         keyboard = InlineKeyboardMarkup([
             [InlineKeyboardButton("➕ Hatırlatıcı oluştur", callback_data="btn_remind_help")],
+            [InlineKeyboardButton("🔁 Günlük rutinler", callback_data="btn_daily_routines")],
             [InlineKeyboardButton("‹ Ana menü", callback_data="btn_home")],
         ])
         await show_panel(
             update,
             "⏰ *Hatırlatıcıların*\n━━━━━━━━━━━━━━━━━━━━━\n"
-            "Bekleyen hatırlatıcın yok.",
+            "Bekleyen tek seferlik hatırlatıcın yok.",
             keyboard,
         )
         return
 
-    text = f"⏰ *Hatırlatıcıların*  ·  _{len(reminders)} bekliyor_\n━━━━━━━━━━━━━━━━━━━━━\n"
+    text = f"⏰ *Hatırlatıcıların*  ·  _{len(reminders)} tek seferlik_\n━━━━━━━━━━━━━━━━━━━━━\n"
     keyboard = []
     for index, reminder in enumerate(reminders[:15], 1):
         due_at = _as_utc(reminder["due_at"]).astimezone(LOCAL_TIMEZONE)
@@ -1553,6 +1639,7 @@ async def list_reminders_command(update: Update, context: ContextTypes.DEFAULT_T
         ])
     keyboard.extend([
         [InlineKeyboardButton("➕ Yeni hatırlatıcı", callback_data="btn_remind_help")],
+        [InlineKeyboardButton("🔁 Günlük rutinleri düzenle", callback_data="btn_daily_routines")],
         [InlineKeyboardButton("‹ Ana menü", callback_data="btn_home")],
     ])
     await show_panel(update, text, InlineKeyboardMarkup(keyboard))
@@ -2014,6 +2101,57 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == "btn_reminders":
         await list_reminders_command(update, context)
 
+    elif data == "btn_daily_routines":
+        context.user_data.pop("pending_action", None)
+        await show_daily_routines(update, context)
+
+    elif data == "add_daily_routine":
+        context.user_data["pending_action"] = "daily_routine_add"
+        await show_panel(
+            update,
+            "➕ *Günlük rutin ekle*\n━━━━━━━━━━━━━━━━━━━━━\n"
+            "Saati ve hatırlatma metnini yaz.\n\n"
+            "Örnek: `18:00 | Omega-3 hapını al`",
+            get_cancel_keyboard(),
+        )
+
+    elif data.startswith("edit_daily_routine_"):
+        reminder_id = int(data.replace("edit_daily_routine_", ""))
+        reminder = db.get_reminder(reminder_id, query.from_user.id)
+        if not reminder or db.get_reminder_recurrence(reminder_id) != "daily":
+            await show_panel(update, "Bu günlük rutin artık bulunamıyor.", get_back_keyboard())
+        else:
+            due_at = _as_utc(reminder["due_at"]).astimezone(LOCAL_TIMEZONE)
+            context.user_data["pending_action"] = f"daily_routine_edit:{reminder_id}"
+            await show_panel(
+                update,
+                "✏️ *Günlük rutini düzenle*\n━━━━━━━━━━━━━━━━━━━━━\n"
+                "Yeni saati ve metni birlikte yaz.\n\n"
+                f"Şu an: *{due_at.strftime('%H:%M')}* · "
+                f"{escape_markdown(reminder['message'])}\n"
+                "Örnek: `18:30 | Omega-3 hapını al`",
+                get_cancel_keyboard(),
+            )
+
+    elif data.startswith("ask_delete_daily_routine_"):
+        reminder_id = int(data.replace("ask_delete_daily_routine_", ""))
+        keyboard = InlineKeyboardMarkup([[
+            InlineKeyboardButton(
+                "Evet, sil", callback_data=f"confirm_delete_daily_routine_{reminder_id}"
+            ),
+            InlineKeyboardButton("Vazgeç", callback_data="btn_daily_routines"),
+        ]])
+        await show_panel(update, "🗑️ *Bu günlük rutin silinsin mi?*", keyboard)
+
+    elif data.startswith("confirm_delete_daily_routine_"):
+        reminder_id = int(data.replace("confirm_delete_daily_routine_", ""))
+        if db.get_reminder_recurrence(reminder_id) == "daily" and db.cancel_reminder(
+            reminder_id, query.from_user.id
+        ):
+            for job in context.job_queue.get_jobs_by_name(f"reminder-{reminder_id}"):
+                job.schedule_removal()
+        await show_daily_routines(update, context)
+
     elif data == "btn_habits":
         await show_habits(update)
 
@@ -2081,8 +2219,11 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data.startswith("ack_reminder_"):
         reminder_id = int(data.replace("ack_reminder_", ""))
         if db.get_reminder(reminder_id, query.from_user.id):
-            db.mark_reminder_sent(reminder_id)
-            await query.edit_message_text("✅ Tamamlandı")
+            if db.get_reminder_recurrence(reminder_id):
+                await query.edit_message_text("✅ Tamamlandı · Yarın yine hatırlatacağım.")
+            else:
+                db.mark_reminder_sent(reminder_id)
+                await query.edit_message_text("✅ Tamamlandı")
         else:
             await query.edit_message_text("Bu hatırlatıcı artık bulunamıyor.")
 
@@ -2303,6 +2444,40 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
+    if pending_action == "daily_routine_add" or (
+        isinstance(pending_action, str) and pending_action.startswith("daily_routine_edit:")
+    ):
+        parsed = parse_daily_routine(raw_text)
+        if not parsed:
+            await update.message.reply_text(
+                "Bu formatı anlayamadım. Örneğin `18:00 | Omega-3 hapını al` yaz.",
+                parse_mode="Markdown",
+                reply_markup=get_cancel_keyboard(),
+            )
+            return
+        hour, minute, routine_message = parsed
+        reminder_id = None
+        if pending_action.startswith("daily_routine_edit:"):
+            reminder_id = int(pending_action.split(":", 1)[1])
+        saved_id = schedule_daily_routine(
+            context,
+            update.effective_user.id,
+            update.effective_chat.id,
+            hour,
+            minute,
+            routine_message,
+            reminder_id,
+        )
+        if saved_id is None:
+            context.user_data.pop("pending_action", None)
+            await update.message.reply_text(
+                "Bu günlük rutin artık bulunamıyor.", reply_markup=get_main_keyboard()
+            )
+            return
+        context.user_data.pop("pending_action", None)
+        await show_daily_routines(update, context)
+        return
+
     if "hatırlat" in text or "hatirlat" in text:
         parsed_datetime = extract_future_datetime(raw_text)
         if parsed_datetime:
@@ -2458,6 +2633,7 @@ def main():
     app.add_handler(CommandHandler("notlar", list_notes_command))
     app.add_handler(CommandHandler("hatirlat", remind_command))
     app.add_handler(CommandHandler("hatirlaticilar", list_reminders_command))
+    app.add_handler(CommandHandler("rutinler", show_daily_routines))
     app.add_handler(CommandHandler("tekrarla", recurring_reminder_command))
 
     # Callback & Metin yöneticileri

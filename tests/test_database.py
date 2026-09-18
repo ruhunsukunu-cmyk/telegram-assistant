@@ -10,15 +10,19 @@ import database
 
 class DatabaseTests(unittest.TestCase):
     def setUp(self):
-        self.temp_dir = tempfile.TemporaryDirectory()
-        self.db_path = os.path.join(self.temp_dir.name, "test.db")
+        db_file = tempfile.NamedTemporaryFile(
+            suffix=".db", dir=os.path.dirname(__file__), delete=False
+        )
+        self.db_path = db_file.name
+        db_file.close()
         self.patch = patch.object(database, "DB_PATH", self.db_path)
         self.patch.start()
         database.init_db()
 
     def tearDown(self):
         self.patch.stop()
-        self.temp_dir.cleanup()
+        if os.path.exists(self.db_path):
+            os.unlink(self.db_path)
 
     def test_note_is_scoped_to_owner(self):
         note_id = database.add_note(1, "deneme")
@@ -27,10 +31,13 @@ class DatabaseTests(unittest.TestCase):
         self.assertTrue(database.delete_note(note_id, 1))
 
     def test_sqlite_creates_configured_parent_directory(self):
-        nested_path = os.path.join(self.temp_dir.name, "volume", "assistant.db")
+        nested_dir = self.db_path + "-volume"
+        nested_path = os.path.join(nested_dir, "assistant.db")
         with patch.object(database, "DB_PATH", nested_path):
             database.init_db()
         self.assertTrue(os.path.isfile(nested_path))
+        os.unlink(nested_path)
+        os.rmdir(nested_dir)
 
     def test_storage_label_distinguishes_persistent_sqlite(self):
         with patch.dict(os.environ, {"DB_PATH": "/data/assistant.db"}):
@@ -84,6 +91,35 @@ class DatabaseTests(unittest.TestCase):
             database.update_active_reminder_message(reminder_id, 1, "B12 hapını al.")
         )
         self.assertEqual(database.get_reminder(reminder_id, 1)["message"], "B12 hapını al.")
+
+    def test_daily_reminders_can_be_listed_and_edited(self):
+        reminder_id = database.add_reminder(
+            1, 99, "Omega-3 hapını al.", datetime.now(timezone.utc) + timedelta(hours=1)
+        )
+        database.set_reminder_recurrence(reminder_id, 1, "daily")
+        new_due_at = datetime.now(timezone.utc) + timedelta(hours=3)
+
+        self.assertTrue(
+            database.update_daily_reminder(
+                reminder_id, 1, "Omega-3 ve su", new_due_at
+            )
+        )
+        routines = database.get_daily_reminders(1)
+        self.assertEqual(len(routines), 1)
+        self.assertEqual(routines[0]["message"], "Omega-3 ve su")
+        self.assertFalse(
+            database.update_daily_reminder(reminder_id, 2, "Başkasının rutini", new_due_at)
+        )
+
+    def test_deleting_daily_reminder_also_deletes_recurrence_rule(self):
+        reminder_id = database.add_reminder(
+            1, 99, "B12", datetime.now(timezone.utc) + timedelta(hours=1)
+        )
+        database.set_reminder_recurrence(reminder_id, 1, "daily")
+
+        self.assertTrue(database.cancel_reminder(reminder_id, 1))
+        self.assertIsNone(database.get_reminder_recurrence(reminder_id))
+        self.assertEqual(database.get_daily_reminders(1), [])
 
     def test_reminders_are_scoped_and_can_be_cancelled(self):
         from datetime import datetime, timedelta, timezone

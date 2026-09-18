@@ -104,6 +104,8 @@ class UiTests(unittest.TestCase):
         with (
             patch.object(bot, "CALENDAR_USER_ID", 7),
             patch.object(bot, "CALENDAR_CHAT_ID", 99),
+            patch.object(bot.db, "get_app_metadata", return_value=None),
+            patch.object(bot.db, "set_app_metadata") as set_marker,
             patch.object(bot.db, "find_active_recurring_reminder", return_value=None),
             patch.object(bot.db, "update_active_reminder_message") as rename,
             patch.object(bot.db, "add_reminder", side_effect=[101, 102, 103]) as add,
@@ -114,6 +116,7 @@ class UiTests(unittest.TestCase):
         self.assertEqual(created, [101, 102, 103])
         self.assertEqual(add.call_count, 3)
         self.assertEqual(recur.call_count, 3)
+        set_marker.assert_called_once()
         rename.assert_not_called()
         messages = [call.args[2] for call in add.call_args_list]
         self.assertIn("B12 hapını al.", messages)
@@ -127,6 +130,8 @@ class UiTests(unittest.TestCase):
         with (
             patch.object(bot, "CALENDAR_USER_ID", 7),
             patch.object(bot, "CALENDAR_CHAT_ID", 99),
+            patch.object(bot.db, "get_app_metadata", return_value=None),
+            patch.object(bot.db, "set_app_metadata"),
             patch.object(bot.db, "find_active_recurring_reminder", side_effect=find),
             patch.object(bot.db, "update_active_reminder_message") as rename,
             patch.object(bot.db, "add_reminder", side_effect=[102, 103]),
@@ -144,8 +149,47 @@ class UiTests(unittest.TestCase):
             for button in row
         ]
         self.assertEqual(callbacks[0], "btn_briefing")
-        self.assertIn("btn_reminders", callbacks)
+        self.assertIn("btn_daily_routines", callbacks)
         self.assertIn("btn_calendar", callbacks)
+
+    def test_daily_routine_parser_accepts_time_and_message(self):
+        self.assertEqual(
+            bot.parse_daily_routine("18:00 | Omega-3 hapını al"),
+            (18, 0, "Omega-3 hapını al"),
+        )
+        self.assertEqual(bot.parse_daily_routine("8.05 | B12"), (8, 5, "B12"))
+        self.assertIsNone(bot.parse_daily_routine("25:00 | Geçersiz"))
+        self.assertIsNone(bot.parse_daily_routine("18:00"))
+
+    def test_new_daily_routine_is_persisted_and_scheduled(self):
+        context = MagicMock()
+        context.job_queue.get_jobs_by_name.return_value = []
+        with (
+            patch.object(bot.db, "add_reminder", return_value=42) as add,
+            patch.object(bot.db, "set_reminder_recurrence") as recur,
+        ):
+            reminder_id = bot.schedule_daily_routine(
+                context, 7, 99, 18, 0, "Omega-3 hapını al"
+            )
+
+        self.assertEqual(reminder_id, 42)
+        add.assert_called_once()
+        recur.assert_called_once_with(42, 7, "daily")
+        scheduled = context.job_queue.run_daily.call_args.kwargs
+        self.assertEqual(scheduled["name"], "reminder-42")
+        self.assertEqual(scheduled["data"]["recurrence"], "daily")
+
+    def test_seeded_routines_are_not_recreated_after_user_deletion(self):
+        with (
+            patch.object(bot, "CALENDAR_USER_ID", 7),
+            patch.object(bot, "CALENDAR_CHAT_ID", 99),
+            patch.object(bot.db, "get_app_metadata", return_value="seeded"),
+            patch.object(bot.db, "add_reminder") as add,
+        ):
+            created = bot.ensure_personal_daily_routines()
+
+        self.assertEqual(created, [])
+        add.assert_not_called()
 
     def test_back_button_returns_home(self):
         markup = bot.get_back_keyboard().to_dict()

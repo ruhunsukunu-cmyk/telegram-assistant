@@ -239,10 +239,22 @@ def mark_reminder_sent(reminder_id):
 
 def cancel_reminder(reminder_id, user_id):
     """Yalnızca sahibine ait ve henüz gönderilmemiş hatırlatıcıyı iptal et."""
-    return _change(
-        "DELETE FROM reminders WHERE id = ? AND user_id = ? AND sent_at IS NULL",
-        (reminder_id, user_id),
-    )
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            _sql(
+                "DELETE FROM reminder_rules WHERE reminder_id = ? AND user_id = ? "
+                "AND EXISTS (SELECT 1 FROM reminders WHERE id = ? AND user_id = ? AND sent_at IS NULL)"
+            ),
+            (reminder_id, user_id, reminder_id, user_id),
+        )
+        cursor.execute(
+            _sql("DELETE FROM reminders WHERE id = ? AND user_id = ? AND sent_at IS NULL"),
+            (reminder_id, user_id),
+        )
+        changed = cursor.rowcount > 0
+        conn.commit()
+        return changed
 
 
 def set_reminder_recurrence(reminder_id, user_id, recurrence):
@@ -261,6 +273,35 @@ def get_reminder_recurrence(reminder_id):
         cursor.execute(_sql("SELECT recurrence FROM reminder_rules WHERE reminder_id = ?"), (reminder_id,))
         row = cursor.fetchone()
         return row["recurrence"] if row else None
+
+
+def get_daily_reminders(user_id):
+    """Return active daily reminders belonging to a user, ordered by time."""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            _sql(
+                "SELECT r.id, r.user_id, r.chat_id, r.message, r.due_at "
+                "FROM reminders r JOIN reminder_rules rr ON rr.reminder_id = r.id "
+                "WHERE r.user_id = ? AND r.sent_at IS NULL AND rr.recurrence = 'daily' "
+                "ORDER BY r.due_at"
+            ),
+            (user_id,),
+        )
+        return cursor.fetchall()
+
+
+def update_daily_reminder(reminder_id, user_id, message, due_at):
+    """Update an active daily reminder without changing its recurrence rule."""
+    due_at = due_at.astimezone(timezone.utc).replace(tzinfo=None)
+    due_value = due_at if _uses_postgres() else due_at.isoformat(sep=" ")
+    return _change(
+        "UPDATE reminders SET message = ?, due_at = ? WHERE id = ? AND user_id = ? "
+        "AND sent_at IS NULL AND EXISTS ("
+        "SELECT 1 FROM reminder_rules rr WHERE rr.reminder_id = reminders.id "
+        "AND rr.user_id = ? AND rr.recurrence = 'daily')",
+        (message.strip(), due_value, reminder_id, user_id, user_id),
+    )
 
 
 def find_active_recurring_reminder(user_id, chat_id, message, recurrence="daily"):

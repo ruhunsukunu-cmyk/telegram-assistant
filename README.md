@@ -142,6 +142,7 @@ Telegram'da kendi botunuza gidin ve **/start** yazarak asistanınızı kullanmay
 | `/notlar` | Kayıtlı notlarınızı listeler | `/notlar` |
 | `/hatirlat <dk> <mesaj>` | Belirtilen dakika sonra alarmlı bildirim atar | `/hatirlat 20 Fırını kapat` |
 | `/hatirlaticilar` | Bekleyen hatırlatıcıları listeler ve iptal ettirir | `/hatirlaticilar` |
+| `/rutinler` | Her gün tekrarlanan rutinleri ekler, düzenler ve siler | `/rutinler` |
 | `/ara <metin>` | Görev ve notlarda birlikte arama yapar | `/ara toplantı` |
 | `/temizle` | Tamamlanan görevleri onayla topluca siler | `/temizle` |
 | `/gorevdetay` | Öncelikli ve tarihli görev ekler | `/gorevdetay yüksek \| yarın 18:00 \| Rapor` |
