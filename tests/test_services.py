@@ -8,7 +8,7 @@ import httpx
 
 from services.calendar_sync import parse_ical_events
 from services.finance import format_price, get_market_rates
-from services.weather import get_weather
+from services.weather import get_running_weather_advice, get_weather
 from services.gemini import (
     GeminiConfigurationError,
     GeminiRateLimitError,
@@ -162,6 +162,30 @@ END:VCALENDAR\r
             result = await get_weather("Istanbul")
         self.assertIn("18.5°C", result)
         self.assertIn("Parçalı Bulutlu", result)
+
+    async def test_running_weather_gives_raincoat_and_clothing_advice(self):
+        today = datetime.now().strftime("%Y-%m-%d")
+        responses = [
+            response({"results": [{
+                "latitude": 41, "longitude": 29, "name": "İstanbul", "country": "Türkiye"
+            }]}),
+            response({"hourly": {
+                "time": [f"{today}T07:00"],
+                "temperature_2m": [8],
+                "apparent_temperature": [5],
+                "precipitation_probability": [70],
+                "precipitation": [1.2],
+                "weather_code": [61],
+                "wind_speed_10m": [24],
+            }}),
+        ]
+        with patch("services.weather.httpx.AsyncClient", return_value=AsyncClientContext(responses)):
+            result = await get_running_weather_advice("Istanbul", "07:00")
+
+        self.assertIn("Yağmurluk giy", result)
+        self.assertIn("katmanlı", result)
+        self.assertIn("rüzgârlık", result)
+        self.assertIn("Hissedilen 5°C", result)
 
     async def test_finance_missing_crypto_values_do_not_crash(self):
         responses = [response({"rates": {"USD": 0.025, "EUR": 0.023, "GBP": 0.02}}), response({})]

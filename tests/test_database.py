@@ -222,7 +222,8 @@ class DatabaseTests(unittest.TestCase):
 
     def test_notification_preferences_use_quiet_defaults(self):
         self.assertTrue(database.notification_enabled(1, "morning"))
-        self.assertTrue(database.notification_enabled(1, "news"))
+        self.assertFalse(database.notification_enabled(1, "news"))
+        self.assertTrue(database.notification_enabled(1, "running_weather"))
         self.assertTrue(database.notification_enabled(1, "calendar"))
         self.assertFalse(database.notification_enabled(1, "midday"))
         self.assertFalse(database.notification_enabled(1, "evening"))

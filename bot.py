@@ -41,7 +41,7 @@ from telegram.ext import (
 )
 
 import database as db
-from services.weather import get_weather
+from services.weather import get_running_weather_advice, get_weather
 from services.finance import get_market_rates
 from services.natural_language import extract_future_datetime, parse_datetime, parse_expense_text
 from services.calendar_sync import fetch_ical_events
@@ -84,11 +84,12 @@ GEMINI_MAX_OUTPUT_TOKENS = max(
     100, min(int(os.getenv("GEMINI_MAX_OUTPUT_TOKENS", "900") or 900), 4096)
 )
 MORNING_BRIEFING_TIME = os.getenv("MORNING_BRIEFING_TIME", "06:00").strip()
-NEWS_DIGEST_TIME = os.getenv("NEWS_DIGEST_TIME", "06:10").strip()
+RUNNING_WEATHER_TIME = os.getenv("RUNNING_WEATHER_TIME", "06:10").strip()
+MORNING_RUN_TIME = os.getenv("MORNING_RUN_TIME", "07:00").strip()
 MIDDAY_CHECK_TIME = os.getenv("MIDDAY_CHECK_TIME", "13:30").strip()
 EVENING_SUMMARY_TIME = os.getenv("EVENING_SUMMARY_TIME", "21:00").strip()
 WEEKLY_REVIEW_TIME = os.getenv("WEEKLY_REVIEW_TIME", "18:00").strip()
-APP_VERSION = "2.7"
+APP_VERSION = "2.8"
 MORNING_BRIEFING_TEST_ON_START = os.getenv(
     "MORNING_BRIEFING_TEST_ON_START", ""
 ).strip().lower() in {"1", "true", "yes", "on"}
@@ -119,6 +120,10 @@ INTRO_TEXT = (
 RELEASE_NOTES_TEXT = (
     "🆕 *Güncelleme notları*\n"
     "━━━━━━━━━━━━━━━━━━━━━\n"
+    "*v2.8 · Sabah koşusu havası*\n"
+    "• Otomatik sabah haberleri kaldırıldı\n"
+    "• Koşu öncesi sıcaklık, hissedilen sıcaklık, yağmur ve rüzgâr bilgisi eklendi\n"
+    "• Yağmurluk ve koşu kıyafeti tavsiyesi otomatik geliyor\n\n"
     "*v2.7 · Düzenlenebilir günlük rutinler*\n"
     "• Günlük rutinler tek ekrandan eklenebilir, düzenlenebilir ve silinebilir\n"
     "• Saat ve hatırlatma metni botun içinden değiştirilebilir\n"
@@ -237,7 +242,7 @@ def get_alerts_keyboard(user_id=None):
             InlineKeyboardButton("🌅 Brifing", callback_data="btn_briefing"),
             InlineKeyboardButton("📰 Haberler", callback_data="btn_news"),
         ],
-        [toggle("morning", "Sabah"), toggle("news", "Haberler")],
+        [toggle("morning", "Sabah"), toggle("running_weather", "Koşu havası")],
         [toggle("midday", "Öğlen"), toggle("evening", "Akşam")],
         [toggle("weekly", "Haftalık")],
         [toggle("calendar", "Takvim uyarıları"), toggle("followup", "Etkinlik sonrası")],
@@ -256,14 +261,14 @@ def notification_settings_text(user_id):
         "🔔 *Bildirim düzenin*\n"
         "━━━━━━━━━━━━━━━━━━━━━\n"
         f"🌅 Günlük brifing: *Her gün {MORNING_BRIEFING_TIME}*\n"
-        f"📰 Haber özeti: *Her gün {NEWS_DIGEST_TIME}*\n"
+        f"🏃 Koşu havası: *Her gün {RUNNING_WEATHER_TIME}* · {MORNING_RUN_TIME} koşusu için\n"
         f"🧭 Akıllı kontrol: *{MIDDAY_CHECK_TIME} · yalnızca gerekirse*\n"
         f"🌙 Gün kapanışı: *Her gün {EVENING_SUMMARY_TIME}*\n"
         f"📊 Haftalık değerlendirme: *Pazar {WEEKLY_REVIEW_TIME}*\n"
         "📅 Takvim uyarıları: *24 saat ve 2 saat önce*\n"
         f"🔗 Telefon takvimi: *{calendar_state}*\n"
         f"⏰ Bekleyen kişisel hatırlatıcı: *{pending_count}*\n\n"
-        "Sabah, haber ve takvim uyarıları varsayılan olarak açık; diğerleri sessizdir. "
+        "Sabah brifingi, koşu havası ve takvim uyarıları varsayılan olarak açık; diğerleri sessizdir. "
         "Yeşil düğmeleri tek dokunuşla değiştirebilirsin."
     )
 
@@ -368,7 +373,8 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "❓ *Nasıl kullanılır?*\n"
         "━━━━━━━━━━━━━━━━━━━━━\n"
         f"• Her sabah *{MORNING_BRIEFING_TIME}* günlük brifing kendiliğinden gelir.\n"
-        f"• Türkiye ve dünya haber özeti *{NEWS_DIGEST_TIME}* saatinde ayrı gelir.\n"
+        f"• Koşu havası *{RUNNING_WEATHER_TIME}* saatinde, {MORNING_RUN_TIME} koşusu için gelir.\n"
+        "• Haberler yalnızca sen istediğinde Haberler düğmesinden hazırlanır.\n"
         "• Takvim etkinlikleri *24 saat ve 2 saat önce* bildirilir.\n"
         "• Öğlen kontrolü, akşam özeti ve haftalık değerlendirme varsayılan olarak kapalıdır.\n"
         "• Kendi hatırlatıcını kurmak için _20 dakika sonra su içmeyi hatırlat_ yazabilirsin.\n"
@@ -1072,6 +1078,20 @@ async def news_digest_callback(context: ContextTypes.DEFAULT_TYPE):
         )
 
 
+async def running_weather_callback(context: ContextTypes.DEFAULT_TYPE):
+    """Sabah koşusundan önce karar odaklı hava ve kıyafet bilgisi gönder."""
+    user_id = context.job.data["user_id"]
+    if not db.notification_enabled(user_id, "running_weather"):
+        return
+    city = db.get_default_city(user_id, DEFAULT_CITY)
+    text = await get_running_weather_advice(city, MORNING_RUN_TIME)
+    await context.bot.send_message(
+        chat_id=context.job.chat_id,
+        text=text,
+        reply_markup=get_main_keyboard(),
+    )
+
+
 async def midday_check_callback(context: ContextTypes.DEFAULT_TYPE):
     user_id = context.job.data["user_id"]
     if not db.notification_enabled(user_id, "midday"):
@@ -1281,7 +1301,7 @@ def restore_daily_summaries(app):
 
 
 ROUTINE_JOB_PREFIXES = (
-    "daily-summary", "news-digest", "midday-check", "evening-summary", "weekly-review"
+    "daily-summary", "news-digest", "running-weather", "midday-check", "evening-summary", "weekly-review"
 )
 
 
@@ -1306,14 +1326,17 @@ def _configured_time(value, fallback):
 
 
 def schedule_proactive_routines_for_user(job_queue, user_id, chat_id):
-    """Bir kullanıcı için haber ve gün içi kontrol işlerini planla."""
+    """Bir kullanıcı için koşu havası ve gün içi kontrol işlerini planla."""
     midday_at = _configured_time(MIDDAY_CHECK_TIME, (13, 30))
     evening_at = _configured_time(EVENING_SUMMARY_TIME, (21, 0))
     weekly_at = _configured_time(WEEKLY_REVIEW_TIME, (18, 0))
-    news_at = _configured_time(NEWS_DIGEST_TIME, (6, 10))
+    running_weather_at = _configured_time(RUNNING_WEATHER_TIME, (6, 10))
     common = {"chat_id": chat_id, "data": {"user_id": user_id}}
     job_queue.run_daily(
-        news_digest_callback, time=news_at, name=f"news-digest-{user_id}", **common
+        running_weather_callback,
+        time=running_weather_at,
+        name=f"running-weather-{user_id}",
+        **common,
     )
     job_queue.run_daily(
         midday_check_callback, time=midday_at, name=f"midday-check-{user_id}", **common
@@ -1352,9 +1375,9 @@ async def send_release_announcement(app):
     text = (
         f"🎉 *Yeni güncelleme yayında · v{APP_VERSION}*\n"
         "━━━━━━━━━━━━━━━━━━\n"
-        "• Günlük rutinlerini botun içinden ekleyebilir, düzenleyebilir ve silebilirsin\n"
-        "• Saat ve hatırlatma metni artık kolayca değiştirilebilir\n"
-        "• Silinen rutinler yeniden oluşmaz\n\n"
+        "• Otomatik sabah haber bildirimi kaldırıldı\n"
+        "• Sabah koşusu için sıcaklık, yağmur ve rüzgâr tahmini geliyor\n"
+        "• Yağmurluk ve kıyafet tavsiyesi tek bakışta gösteriliyor\n\n"
         "Ayrıntılar için /yenilikler"
     )
     try:
@@ -1433,7 +1456,7 @@ async def daily_summary_time_command(update: Update, context: ContextTypes.DEFAU
     if value in {"kapat", "off", "iptal"}:
         remove_user_routine_jobs(context.job_queue, user_id)
         db.delete_daily_summary(user_id)
-        await update.message.reply_text("Günlük otomatik brifing ve haber akışı kapatıldı.")
+        await update.message.reply_text("Günlük otomatik brifing ve koşu havası kapatıldı.")
         return
     import re
     if not re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", value):
@@ -1902,7 +1925,7 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"• Takvim: {'bağlı' if external_calendar_enabled_for(update.effective_user.id) else 'yerel'}\n"
         f"• Gemini: {'bağlı' if GEMINI_API_KEY else 'yapılandırılmadı'}\n"
         f"• Sabah özeti: {MORNING_BRIEFING_TIME}\n"
-        f"• Haber özeti: {NEWS_DIGEST_TIME}\n"
+        f"• Koşu havası: {RUNNING_WEATHER_TIME} ({MORNING_RUN_TIME} koşusu)\n"
         f"• Saat: {datetime.now(LOCAL_TIMEZONE).strftime('%d.%m.%Y %H:%M')}"
     )
 
@@ -2044,14 +2067,15 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             update,
             "⚙️ *Ayarlar*\n━━━━━━━━━━━━━━━━━━━━━\n"
             "Bildirimlerini düzenleyebilir, botun yeteneklerini görebilir ve eski araçlara erişebilirsin.\n\n"
-            f"📰 Haber özeti: *Her gün {NEWS_DIGEST_TIME}*\n"
+            f"🏃 Koşu havası: *Her gün {RUNNING_WEATHER_TIME}*\n"
+            "📰 Haberler yalnızca istediğinde hazırlanır.\n"
             "🤖 Gemini için doğrudan mesaj yazman yeterli.",
             get_settings_keyboard(),
         )
 
     elif data.startswith("toggle_notify_"):
         kind = data.replace("toggle_notify_", "")
-        if kind in {"morning", "news", "midday", "evening", "weekly", "calendar", "followup"}:
+        if kind in {"morning", "running_weather", "midday", "evening", "weekly", "calendar", "followup"}:
             user_id = query.from_user.id
             db.set_notification_enabled(
                 user_id, kind, not db.notification_enabled(user_id, kind)

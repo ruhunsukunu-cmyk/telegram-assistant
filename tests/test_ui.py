@@ -97,8 +97,9 @@ class UiTests(unittest.TestCase):
 
         names = {call.kwargs["name"] for call in job_queue.run_daily.call_args_list}
         self.assertEqual(names, {
-            "news-digest-7", "midday-check-7", "evening-summary-7", "weekly-review-7"
+            "running-weather-7", "midday-check-7", "evening-summary-7", "weekly-review-7"
         })
+        self.assertNotIn("news-digest-7", names)
 
     def test_personal_daily_routines_are_created_once(self):
         with (
@@ -275,6 +276,24 @@ class ReleaseAnnouncementTests(unittest.IsolatedAsyncioTestCase):
 
 
 class TodaySummaryTests(unittest.IsolatedAsyncioTestCase):
+    async def test_running_weather_notification_uses_saved_city(self):
+        context = MagicMock()
+        context.job.data = {"user_id": 7}
+        context.job.chat_id = 99
+        context.bot.send_message = AsyncMock()
+        with (
+            patch("bot.db.notification_enabled", return_value=True),
+            patch("bot.db.get_default_city", return_value="Ankara"),
+            patch(
+                "bot.get_running_weather_advice",
+                new=AsyncMock(return_value="🏃 Koşu havası hazır"),
+            ) as advice,
+        ):
+            await bot.running_weather_callback(context)
+
+        advice.assert_awaited_once_with("Ankara", bot.MORNING_RUN_TIME)
+        context.bot.send_message.assert_awaited_once()
+
     async def test_today_summary_combines_daily_information(self):
         with (
             patch("bot.get_weather", new=AsyncMock(return_value="🌤️ Hava özeti")),

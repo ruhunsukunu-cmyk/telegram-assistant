@@ -20,7 +20,8 @@ Telefonunuzdan 7/24 erişebileceğiniz, görevlerinizi ve notlarınızı tutan, 
 - 📅 **Telefon Takvimi:** Google Takvim'deki etkinlikleri salt okunur iCal akışıyla gösterir ve yaklaşınca Telegram bildirimi yollar.
 - 🤖 **Gemini Asistan:** Soruları yanıtlar, fikir üretir ve bekleyen görevler ile yakın takvimden yararlanarak gün planlamasına yardım eder.
 - 🌅 **Karar Odaklı Sabah Brifingi:** Her sabah hava, takvim ve önceliklerden kısa bir kişisel eylem planı çıkarır.
-- 📰 **Ayrı Haber Özeti:** Türkiye ve dünyadan beşer önemli, doğrulanmış başlığı Gemini + Google Search ile ayrı mesajda sunar.
+- 🏃 **Sabah Koşusu Havası:** Koşudan önce sıcaklık, hissedilen sıcaklık, yağış ve rüzgâra göre kıyafet/yağmurluk tavsiyesi yollar.
+- 📰 **İsteğe Bağlı Haber Özeti:** Türkiye ve dünyadan beşer önemli, doğrulanmış başlığı yalnızca istendiğinde Gemini + Google Search ile sunar.
 - 🧭 **Sessiz Akıllı Kontrol:** Öğlen kontrolü, akşam özeti, haftalık değerlendirme ve etkinlik sonrası takip varsayılan olarak kapalıdır; Ayarlar'dan açılabilir.
 - 🧠 **Etkinlik Hazırlığı:** Toplantı, doktor, seyahat ve ödeme gibi etkinliklere uygun hazırlık önerisi ve tek dokunuşlu erteleme sunar.
 - 🌙 **Gün ve Hafta Kapanışı:** Akşam açık döngüleri gösterir; pazar günü tamamlanan işleri ve yaklaşan haftayı değerlendirir.
@@ -67,7 +68,8 @@ CALENDAR_CHAT_ID=Telegram_sohbet_kimliginiz
 GEMINI_API_KEY=Google_AI_Studio_anahtariniz
 GEMINI_MODEL=gemini-2.5-flash
 MORNING_BRIEFING_TIME=06:00
-NEWS_DIGEST_TIME=06:10
+RUNNING_WEATHER_TIME=06:10
+MORNING_RUN_TIME=07:00
 MIDDAY_CHECK_TIME=13:30
 EVENING_SUMMARY_TIME=21:00
 WEEKLY_REVIEW_TIME=18:00

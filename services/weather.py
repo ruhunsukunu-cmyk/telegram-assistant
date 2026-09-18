@@ -1,3 +1,5 @@
+from datetime import datetime
+
 import httpx
 
 # WMO Hava Durumu Kodları Tablosu
@@ -130,3 +132,128 @@ async def get_weather(city_name: str = "Istanbul") -> str:
             )
     except Exception:
         return "⚠️ Hava durumu servisleri şu anda yoğun. Lütfen kısa bir süre sonra tekrar deneyin."
+
+
+def _running_clothing_advice(feels_like, wind_speed):
+    """Koşuda hissedilen sıcaklığa göre kısa ve güvenli bir katman önerisi üret."""
+    try:
+        temperature = float(feels_like)
+    except (TypeError, ValueError):
+        return "Rahat koşu kıyafetini seç; çıkmadan önce sıcaklığı tekrar kontrol et."
+
+    if temperature <= 3:
+        clothing = "Termal üst, uzun tayt, eldiven ve bereyle kalın giyin."
+    elif temperature <= 8:
+        clothing = "Uzun tayt ve katmanlı üst giy; ince eldiven iyi olur."
+    elif temperature <= 13:
+        clothing = "İnce koşu ceketi veya uzun kollu üst giy."
+    elif temperature <= 18:
+        clothing = "İnce, nefes alan bir üst yeterli; hafif serin başlayabilir."
+    else:
+        clothing = "İnce ve nefes alan koşu kıyafeti giy."
+
+    try:
+        wind = float(wind_speed)
+    except (TypeError, ValueError):
+        wind = 0
+    if wind >= 30:
+        clothing += " Rüzgâr çok güçlü; açık parkur yerine korunaklı rota seç."
+    elif wind >= 20:
+        clothing += " Rüzgâr için ince bir rüzgârlık ekle."
+    return clothing
+
+
+def _running_rain_advice(weather_code, precipitation_probability, precipitation):
+    rain_codes = {51, 53, 55, 61, 63, 65, 80, 81, 82, 95}
+    try:
+        probability = float(precipitation_probability)
+    except (TypeError, ValueError):
+        probability = 0
+    try:
+        amount = float(precipitation)
+    except (TypeError, ValueError):
+        amount = 0
+    if weather_code in rain_codes or probability >= 50 or amount >= 0.2:
+        return "Yağmurluk giy; ıslak ve kaygan zemine dikkat et."
+    if probability >= 25:
+        return "Yağmur ihtimali düşük-orta; ince yağmurluk almak mantıklı."
+    return "Yağmurluk gerekmiyor."
+
+
+async def get_running_weather_advice(
+    city_name: str = "Istanbul", run_time: str = "07:00"
+) -> str:
+    """Sabah koşu saatine ait tahmini ve doğrudan giyim tavsiyesini getir."""
+    try:
+        target_hour = int(run_time.split(":", 1)[0])
+    except (AttributeError, TypeError, ValueError):
+        target_hour = 7
+
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            geo_res = await client.get(
+                "https://geocoding-api.open-meteo.com/v1/search",
+                params={"name": city_name, "count": 1, "language": "tr", "format": "json"},
+            )
+            geo_res.raise_for_status()
+            results = geo_res.json().get("results", [])
+            if not results:
+                return f"⚠️ Koşu havası için '{city_name}' bulunamadı."
+
+            city = results[0]
+            weather_res = await client.get(
+                "https://api.open-meteo.com/v1/forecast",
+                params={
+                    "latitude": city["latitude"],
+                    "longitude": city["longitude"],
+                    "hourly": (
+                        "temperature_2m,apparent_temperature,precipitation_probability,"
+                        "precipitation,weather_code,wind_speed_10m"
+                    ),
+                    "forecast_days": 2,
+                    "timezone": "auto",
+                },
+            )
+            weather_res.raise_for_status()
+            hourly = weather_res.json().get("hourly", {})
+            times = hourly.get("time", [])
+            now = datetime.now()
+            candidates = []
+            for index, value in enumerate(times):
+                try:
+                    forecast_at = datetime.fromisoformat(value)
+                except (TypeError, ValueError):
+                    continue
+                if forecast_at.date() == now.date() and forecast_at.hour == target_hour:
+                    candidates.append((forecast_at, index))
+            if not candidates:
+                raise ValueError("Koşu saatine ait tahmin bulunamadı")
+            _, index = candidates[0]
+
+            def at(field, default="--"):
+                values = hourly.get(field, [])
+                return values[index] if index < len(values) and values[index] is not None else default
+
+            temperature = at("temperature_2m")
+            feels_like = at("apparent_temperature", temperature)
+            probability = at("precipitation_probability", 0)
+            precipitation = at("precipitation", 0)
+            weather_code = at("weather_code", 0)
+            wind = at("wind_speed_10m", 0)
+            condition, emoji = WEATHER_CODES.get(weather_code, ("Normal", "🌡️"))
+            rain_advice = _running_rain_advice(weather_code, probability, precipitation)
+            clothing_advice = _running_clothing_advice(feels_like, wind)
+
+            return (
+                f"🏃 Sabah koşusu · {run_time}\n"
+                f"📍 {city['name']} · {emoji} {condition}\n"
+                f"🌡️ {temperature}°C · Hissedilen {feels_like}°C\n"
+                f"🌧️ Yağış ihtimali %{probability} · 💨 Rüzgâr {wind} km/sa\n\n"
+                f"🧥 {clothing_advice}\n"
+                f"☔ {rain_advice}"
+            )
+    except Exception:
+        return (
+            "🏃 Sabah koşusu\n"
+            "Hava tahmini şu anda alınamadı. Çıkmadan hemen önce hava durumunu kontrol et."
+        )
