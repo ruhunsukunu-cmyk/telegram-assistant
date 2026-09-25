@@ -41,6 +41,7 @@ from telegram.ext import (
 )
 
 import database as db
+from services import vocabulary
 from services.weather import get_running_weather_advice, get_weather
 from services.finance import get_market_rates
 from services.natural_language import extract_future_datetime, parse_datetime, parse_expense_text
@@ -89,7 +90,7 @@ MORNING_RUN_TIME = os.getenv("MORNING_RUN_TIME", "07:00").strip()
 MIDDAY_CHECK_TIME = os.getenv("MIDDAY_CHECK_TIME", "13:30").strip()
 EVENING_SUMMARY_TIME = os.getenv("EVENING_SUMMARY_TIME", "21:00").strip()
 WEEKLY_REVIEW_TIME = os.getenv("WEEKLY_REVIEW_TIME", "18:00").strip()
-APP_VERSION = "2.8"
+APP_VERSION = "2.9"
 MORNING_BRIEFING_TEST_ON_START = os.getenv(
     "MORNING_BRIEFING_TEST_ON_START", ""
 ).strip().lower() in {"1", "true", "yes", "on"}
@@ -120,6 +121,10 @@ INTRO_TEXT = (
 RELEASE_NOTES_TEXT = (
     "🆕 *Güncelleme notları*\n"
     "━━━━━━━━━━━━━━━━━━━━━\n"
+    "*v2.9 · A2 kelime rutini*\n"
+    "• 09.00 bildirimi, 48 kelimelik başlangıç havuzu\n"
+    "• Günlük 8 kelime, kısa sürüm, pazar testi ve kalıcı ilerleme\n"
+    "• /vocabulary ile başla; /kelimecumle ile cümle kontrolü\n\n"
     "*v2.8 · Sabah koşusu havası*\n"
     "• Otomatik sabah haberleri kaldırıldı\n"
     "• Koşu öncesi sıcaklık, hissedilen sıcaklık, yağmur ve rüzgâr bilgisi eklendi\n"
@@ -183,6 +188,7 @@ def get_main_keyboard():
 
 def get_settings_keyboard():
     return InlineKeyboardMarkup([
+        [InlineKeyboardButton("🇩🇪 Almanca kelime çalışması", callback_data="voc:start")],
         [InlineKeyboardButton("🔔 Bildirimler", callback_data="btn_alerts")],
         [
             InlineKeyboardButton("👋 Kısa tanıtım", callback_data="btn_intro"),
@@ -243,6 +249,7 @@ def get_alerts_keyboard(user_id=None):
             InlineKeyboardButton("📰 Haberler", callback_data="btn_news"),
         ],
         [toggle("morning", "Sabah"), toggle("running_weather", "Koşu havası")],
+        [toggle("vocabulary", "Almanca · 09.00")],
         [toggle("midday", "Öğlen"), toggle("evening", "Akşam")],
         [toggle("weekly", "Haftalık")],
         [toggle("calendar", "Takvim uyarıları"), toggle("followup", "Etkinlik sonrası")],
@@ -1375,9 +1382,9 @@ async def send_release_announcement(app):
     text = (
         f"🎉 *Yeni güncelleme yayında · v{APP_VERSION}*\n"
         "━━━━━━━━━━━━━━━━━━\n"
-        "• Otomatik sabah haber bildirimi kaldırıldı\n"
-        "• Sabah koşusu için sıcaklık, yağmur ve rüzgâr tahmini geliyor\n"
-        "• Yağmurluk ve kıyafet tavsiyesi tek bakışta gösteriliyor\n\n"
+        "• A2 Almanca kelime rutini hazır: /vocabulary\n"
+        "• 09.00 bildirimi, günlük 8 kelime ve aralıklı tekrar\n"
+        "• Kısa sürüm, pazar toplu testi ve ilerleme ekranı\n\n"
         "Ayrıntılar için /yenilikler"
     )
     try:
@@ -1395,6 +1402,9 @@ async def send_release_announcement(app):
 
 async def initialize_app(app):
     """Telegram komut menüsünü kur ve kalıcı hatırlatıcıları geri yükle."""
+    if CALENDAR_USER_ID and CALENDAR_CHAT_ID:
+        app.job_queue.run_daily(vocabulary.reminder, time=_configured_time("09:00", (9, 0)),
+            chat_id=CALENDAR_CHAT_ID, data={"user_id": CALENDAR_USER_ID}, name="vocabulary-morning")
     await app.bot.set_my_commands([
         BotCommand("menu", "Ana paneli aç"),
         BotCommand("sabahozeti", "Günlük brifingi şimdi göster"),
@@ -1403,6 +1413,8 @@ async def initialize_app(app):
         BotCommand("takvim", "Yaklaşan etkinlikleri göster"),
         BotCommand("hatirlaticilar", "Bekleyen hatırlatıcılarını görüntüle"),
         BotCommand("rutinler", "Her gün tekrarlanan rutinlerini düzenle"),
+        BotCommand("vocabulary", "A2 kelime çalışması ve ilerleme"),
+        BotCommand("kelimecumle", "Almanca cümlelerini kontrol ettir"),
         BotCommand("durum", "Botun çalışma durumunu göster"),
         BotCommand("yenilikler", "Son güncellemeleri göster"),
         BotCommand("hakkinda", "Botun yapabildiği her şeyi göster"),
@@ -2005,6 +2017,9 @@ async def calendar_export_command(update: Update, context: ContextTypes.DEFAULT_
 # BUTON ETKİLEŞİMLERİ (CALLBACK QUERY)
 # ─────────────────────────────────────────
 async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.callback_query.data.startswith("voc:"):
+        await vocabulary.callback(update, context)
+        return
     query = update.callback_query
     await query.answer()
     data = query.data
@@ -2075,7 +2090,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif data.startswith("toggle_notify_"):
         kind = data.replace("toggle_notify_", "")
-        if kind in {"morning", "running_weather", "midday", "evening", "weekly", "calendar", "followup"}:
+        if kind in {"morning", "running_weather", "vocabulary", "midday", "evening", "weekly", "calendar", "followup"}:
             user_id = query.from_user.id
             db.set_notification_enabled(
                 user_id, kind, not db.notification_enabled(user_id, kind)
@@ -2404,6 +2419,9 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Kullanıcı buton veya slash komut yerine direkt metin yazarsa akıllı yanıt verir."""
     raw_text = (update.message.text or "").strip()
+    if raw_text.casefold() == "vocabulary":
+        await vocabulary.command(update, context)
+        return
     text = raw_text.lower()
     pending_action = context.user_data.get("pending_action")
 
@@ -2658,6 +2676,8 @@ def main():
     app.add_handler(CommandHandler("hatirlat", remind_command))
     app.add_handler(CommandHandler("hatirlaticilar", list_reminders_command))
     app.add_handler(CommandHandler("rutinler", show_daily_routines))
+    app.add_handler(CommandHandler("vocabulary", vocabulary.command))
+    app.add_handler(CommandHandler("kelimecumle", vocabulary.sentence_command))
     app.add_handler(CommandHandler("tekrarla", recurring_reminder_command))
 
     # Callback & Metin yöneticileri

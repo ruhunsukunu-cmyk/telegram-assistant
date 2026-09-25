@@ -667,6 +667,7 @@ def delete_user_data(user_id):
     """Kullanıcıya ait tüm verileri tek işlemde kaldır."""
     with get_db() as conn:
         cursor = conn.cursor()
+        cursor.execute(_sql("DELETE FROM app_metadata WHERE key = ?"), (f"vocabulary:{user_id}",))
         cursor.execute(_sql("DELETE FROM habit_logs WHERE user_id = ?"), (user_id,))
         cursor.execute(_sql("DELETE FROM task_metadata WHERE user_id = ?"), (user_id,))
         cursor.execute(_sql("DELETE FROM reminder_rules WHERE user_id = ?"), (user_id,))
