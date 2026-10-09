@@ -2,6 +2,8 @@
 
 Tek sahipli Telegram botu; yalnız Ruhun Sükûnu (UCwtUrD_YkZ7xoofBsuwzTMA) için salt okunur YouTube analizleri. Eski kişisel asistan, Almanca, takvim ve günlük bildirim kodları kaldırıldı. Eski uygulama verileri bu kod değişikliğiyle otomatik silinmez; aşağıdaki canlı geçiş uygulanmalıdır.
 
+Üretim ortamı mevcut Railway hizmetidir; ikinci Render botu askıya alınmış ve otomatik dağıtımı kapatılmıştır. Eski Render blueprint'i kaldırıldı. Railway'e CLI ile dağıtım gitignore kurallarını korumalıdır; work/, yerel veritabanları ve sır dosyaları dağıtım arşivine alınmaz. Hiçbir zaman --no-gitignore kullanma.
+
 ## Yerel doğrulama
 
 Python 3.12+ kullan. requirements.txt bağımlılıklarını kur. Repo .venv/Scripts/python.exe -m unittest discover -s tests -q ile fixture testlerini çalıştır. Testler work/tests altında kendi SQLite dosyalarını kullanır; canlı anahtar veya veri kullanmaz. bot.py yalnız ruhun_bot.main girişidir.
