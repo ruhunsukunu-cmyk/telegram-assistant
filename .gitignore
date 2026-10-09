@@ -4,6 +4,12 @@ venv/
 .test-tmp/
 .env
 *.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+.ruhun-youtube-secrets.json
+work/
 __pycache__/
 *.pyc
 .DS_Store

@@ -1,19 +1,11 @@
 @echo off
 chcp 65001 >nul
-title Telegram Asistan Botu
-echo =======================================================
-echo          🤖 TELEGRAM KİŞİSEL ASİSTAN BOTU
-echo =======================================================
-echo.
-
-if not exist ".env" (
-    echo [UYARI] .env dosyasi bulunamadi! .env.example kopyalaniyor...
-    copy .env.example .env >nul
+title Ruhun Sukunu Shorts Takipcisi
+cd /d "%~dp0"
+if not exist ".env" copy .env.example .env >nul
+if exist ".venv\Scripts\python.exe" (
+  .venv\Scripts\python.exe bot.py
+) else (
+  python bot.py
 )
-
-echo Bot baslatiliyor...
-echo Kapatmak icin: Ctrl + C
-echo.
-
-.\venv\Scripts\python.exe bot.py
 pause
