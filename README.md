@@ -12,7 +12,7 @@ Python 3.12+ kullan. requirements.txt bağımlılıklarını kur. Repo .venv/Scr
 
 SQLite: mevcut kalıcı /data volume korunur, temiz /data/ruhun.db kullanılır. PostgreSQL: mevcut DATABASE_URL korunur; başka uygulama tabloları asla silinmez. Yeni tablolar ruhun_records ve ruhun_leases; JSON alanlarındaki namespace ayrımı videos/daily/summaries/production/experiments/reports/ai/meta/deliveries/alerts için kullanılır.
 
-Varsayılan RUHUN_JOBS_ENABLED=false. Etkinleştirilince İstanbul saati 10:00 sessiz toplama, pazartesi 11:00 haftalık rapor, salı 11:15 yalnız önceki gün başarısız AI için bir yeniden deneme. Aynı raporu görüntülemek AI çağrısı yapmaz. İlk aktarım ve gerçek sorgu doğrulanmadan işleri açma.
+Varsayılan RUHUN_JOBS_ENABLED=false. Etkinleştirilince İstanbul saati 10:00 sessiz toplama, pazartesi 11:00 haftalık rapor. Her gün 11:15 kontrolü yalnız önceki gün başarısız AI için tek yeniden deneme yapabilir; diğer günlerde modele çağrı yapılmaz. Böylece farklı günde oluşturulan ilk kurulum raporunun yeniden denemesi de ertesi gün çalışır. Aynı raporu görüntülemek AI çağrısı yapmaz. İlk aktarım ve gerçek sorgu doğrulanmadan işleri açma.
 
 ## Google bağlantısı
 

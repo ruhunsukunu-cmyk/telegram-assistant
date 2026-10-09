@@ -201,6 +201,16 @@ class AsyncCase(unittest.IsolatedAsyncioTestCase):
     async def test_unconfigured_owner_has_no_jobs(self):
         app = build_application(replace(CONFIG, owner_id=0, jobs_enabled=True), self.store)
         schedule(app); self.assertEqual(app.job_queue.jobs(), ())
+    async def test_old_morning_times_have_no_scheduled_messages(self):
+        from services.ruhun_reporting import LOCAL
+        app = build_application(replace(CONFIG, jobs_enabled=True), self.store)
+        schedule(app)
+        for hour in (6, 9):
+            now = datetime(2026, 10, 12, hour, tzinfo=LOCAL)
+            for job in app.job_queue.jobs():
+                fire = job.job.trigger.get_next_fire_time(None, now)
+                self.assertGreaterEqual(fire, now.replace(hour=10))
+        app.job_queue.scheduler.remove_all_jobs()
     async def test_legacy_command_and_button_never_model_call(self):
         update = SimpleNamespace(effective_message=SimpleNamespace(reply_text=AsyncMock()),
                                  callback_query=SimpleNamespace(answer=AsyncMock(), data='voc:start', message=SimpleNamespace(reply_text=AsyncMock())))

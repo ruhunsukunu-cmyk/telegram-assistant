@@ -1,6 +1,7 @@
 """Free-tier-only weekly qualitative analysis of already computed figures."""
 import hashlib
 import json
+import logging
 import re
 from services.gemini import generate_text, GeminiError
 from services.ruhun_youtube import METRICS
@@ -73,5 +74,6 @@ async def evaluate(config, report, transport=None):
         raw = re.sub(r'^```(?:json)?\s*|\s*```$', '', raw.strip())
         result = validate_result(json.loads(raw), {v['video_id'] for v in context['videos']})
         return result, 'available'
-    except (GeminiError, ValueError, TypeError):
+    except (GeminiError, ValueError, TypeError) as exc:
+        logging.getLogger('ruhun.ai').warning('AI değerlendirmesi kaydedilmedi: %s', type(exc).__name__)
         return None, 'failed'

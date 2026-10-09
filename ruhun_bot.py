@@ -171,7 +171,9 @@ def schedule(app):
     app.job_queue.run_daily(collection_job, walltime(10, tzinfo=LOCAL), name='ruhun-collection', **options)
     # python-telegram-bot 21 days: Sunday=0, Monday=1.
     app.job_queue.run_daily(weekly_job, walltime(11, tzinfo=LOCAL), days=(1,), name='ruhun-weekly', **options)
-    app.job_queue.run_daily(ai_retry_job, walltime(11, 15, tzinfo=LOCAL), days=(2,), name='ruhun-ai-retry', **options)
+    # Also covers an initial setup report created on a day other than Monday.
+    # Tracker makes no model call except one retry on the next day.
+    app.job_queue.run_daily(ai_retry_job, walltime(11, 15, tzinfo=LOCAL), name='ruhun-ai-retry', **options)
 
 async def initialize(app):
     config = app.bot_data['config']
