@@ -207,6 +207,10 @@ def build_application(config, store=None):
     return app
 
 def main():
+    if os.getenv('RUHUN_MAINTENANCE', '').lower() in ('1', 'true', 'yes'):
+        from tools.maintenance_server import main as maintenance
+        maintenance()
+        return
     config = Config.from_env()
     if not config.token:
         raise SystemExit('TELEGRAM_BOT_TOKEN gerekli.')

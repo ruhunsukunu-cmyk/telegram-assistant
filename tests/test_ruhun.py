@@ -22,6 +22,7 @@ from services.ruhun_ai import evaluate, validate_result, fingerprint, context_fo
 from services.ruhun_tracker import Tracker
 from tools.reset_legacy import inventory, reset
 from ruhun_bot import authorized, build_application, schedule, initialize, help_message, callbacks
+from ruhun_bot import main as bot_main
 
 NOW = datetime(2026, 10, 12, 8, tzinfo=timezone.utc)
 CONFIG = Config(token='123456789:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghi', owner_id=7, chat_id=7,
@@ -58,6 +59,13 @@ class StoreCase(unittest.TestCase):
         self.store = Store(self.path, url=''); self.store.init()
     def tearDown(self):
         self.temp.cleanup()
+    def test_maintenance_never_builds_bot_or_database(self):
+        with patch.dict('os.environ', {'RUHUN_MAINTENANCE': 'true'}), \
+             patch('tools.maintenance_server.main') as quiet, \
+             patch('ruhun_bot.build_application') as build:
+            bot_main()
+            quiet.assert_called_once()
+            build.assert_not_called()
     def test_upsert_restart(self):
         self.store.put('daily', 'v:d', {'views': 1}); self.store.put('daily', 'v:d', {'views': 2})
         second = Store(self.path, url=''); second.init()
@@ -79,6 +87,8 @@ class StoreCase(unittest.TestCase):
         self.assertIsNone(subscriber_rate({'engagedViews': 0, 'subscribersGained': 3}))
         self.assertEqual(subscriber_rate(MEASURES), 60)
         with self.assertRaises(ValueError): normalized_metrics({'views': float('nan')})
+        self.assertEqual(normalized_metrics({'likes': -1})['likes'], -1)
+        with self.assertRaises(ValueError): normalized_metrics({'views': -1})
     def test_small_sample_and_other_format(self):
         report = fixture(self.store, 4)
         self.store.put('videos', 'long', {'id': 'long', 'content_type': 'OTHER'})

@@ -33,7 +33,7 @@ def normalized_metrics(row):
     for name in METRICS:
         value = row.get(name)
         if value is not None and (isinstance(value, bool) or not isinstance(value, (int, float))
-                                  or not math.isfinite(value) or value < 0):
+                                  or not math.isfinite(value) or (value < 0 and name != 'likes')):
             raise ValueError('Analiz ölçümü geçersiz.')
         result[name] = value
     return result
@@ -131,6 +131,7 @@ def build_report(store, now):
             'last_collection': store.get('meta', 'collection'),
             'caveats': ['Eksik analiz sıfır değildir.', 'Günler Pasifik saatidir; ilk 168 saat değildir.',
                         'Son günler gecikmeli olabilir.', 'Kaynak bağlantısı dinî doğrulama değildir.',
+                        'API bazı günlerde negatif likes döndürebilir; işaret değiştirilmeden korunur.',
                         'Feed gösterimi ve kaydırma oranı bu raporda yoktur.']}
 
 def fmt(value, decimals=1):
