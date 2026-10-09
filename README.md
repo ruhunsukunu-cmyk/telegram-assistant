@@ -27,7 +27,7 @@ AI son yirmi uygun videoyu nitel yorumlar; beş uygun örnek yoksa çağrı yap�
 ## Canlı sıfırlama — geri alınamaz, eski veri yedeği yok
 
 1. Yerel testler geçmeli. Railway repo/branch/servis ve tüm eski bot örnekleri doğrulanmalı.
-2. Eski botu durdur. Eski veriye yazan süreç kalmadığını kontrol et.
+2. Eski botu durdur. Eski veriye yazan süreç kalmadığını kontrol et. SSH temizliği için aynı hizmete RUHUN_MAINTENANCE=true ile yeni kodu dağıt: bu HTTP bakım ekranı Telegram'a bağlanmaz, veritabanı veya görev açmaz. Temizlik tamamlanınca false yap; eski sürümü yeniden açma.
 3. tools/reset_legacy.py --sqlite ABSOLUTE_DB ile şema/tablolar/sayılar envanteri al. Kişisel kayıt içeriklerini dışa aktarma. Render SOURCE_DATABASE_URL varsa aynı uygulamanın eski PostgreSQL kaynağı için DATABASE_URL geçici olarak işlem ortamında ayarlanarak --postgres envanterini de doğrula; URL'yi yazdırma.
 4. Doğrulanmış hedefte --apply --stopped --confirm DELETE_LEGACY_NO_BACKUP çalıştır. Yalnız eski uygulama imzasına uyan tablolar silinir; CASCADE kullanılmaz. SQLite secure_delete ve VACUUM uygulanır. Başka tablolar varsa dosyanın tamamını silme. Eski uygulama SQLite dosyası ve sidecar dosyaları başka veri taşımıyorsa kesin yollar doğrulanıp kaldırılır. Yönetilebilir eski yedekleri ve yerel kopyaları ayrıca listeleyip temizle; sır içermeyen silme kayıtları tut. Sağlayıcı saklama kopyalarını anında silinmiş gösterme.
 5. SOURCE_DATABASE_URL, CALENDAR_*, DEFAULT_CITY, MINI_APP_URL, MORNING_* ve artık kullanılmayan eski GEMINI_API_KEY kaldırılır; başka uygulamaların anahtarları iptal edilmez. Token/WEBHOOK_URL/PORT/PYTHON_VERSION/TIMEZONE/kalıcı volume korunur.

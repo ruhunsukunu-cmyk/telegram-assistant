@@ -74,7 +74,10 @@ async def generate_text(
 
     try:
         data = response.json()
-        parts = data["candidates"][0]["content"]["parts"]
+        candidate = data["candidates"][0]
+        if candidate.get("finishReason") != "STOP":
+            raise GeminiError("Gemini yanıtı tamamlanmadı; yayımlanmayacak.")
+        parts = candidate["content"]["parts"]
         text = "\n".join(part["text"] for part in parts if part.get("text")).strip()
     except (KeyError, IndexError, TypeError, ValueError) as exc:
         raise GeminiError("Gemini yanıt üretemedi.") from exc

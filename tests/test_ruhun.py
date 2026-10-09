@@ -19,6 +19,7 @@ from services.ruhun_reporting import (first_window, periods, duration_group, nor
                                      subscriber_rate, validate_bundle, build_report, markdown)
 from services.ruhun_youtube import YouTube, YouTubeError, METRICS, SCOPES, rows_to_dicts
 from services.ruhun_ai import evaluate, validate_result, fingerprint, context_for
+from services.gemini import generate_text, GeminiError
 from services.ruhun_tracker import Tracker
 from tools.reset_legacy import inventory, reset
 from ruhun_bot import authorized, build_application, schedule, initialize, help_message, callbacks
@@ -145,6 +146,12 @@ class AsyncCase(unittest.IsolatedAsyncioTestCase):
         with patch('services.ruhun_ai.generate_text', new_callable=AsyncMock) as call:
             result, status = await evaluate(replace(CONFIG, gemini_key='paid-or-unknown'), report)
             call.assert_not_called(); self.assertEqual(status, 'disabled_unverified')
+    async def test_truncated_or_blocked_ai_never_published(self):
+        for reason in ('MAX_TOKENS', 'SAFETY', None):
+            transport = httpx.MockTransport(lambda request: httpx.Response(200, json={
+                'candidates': [{'finishReason': reason, 'content': {'parts': [{'text': '{}'}]}}]}))
+            with self.assertRaises(GeminiError):
+                await generate_text('fixture', '{}', 'fixture', transport=transport)
     async def test_ai_schema_and_reference_rejection(self):
         good = {'observations': [{'text': 'Açılış yönünü sınamak yararlı olabilir.', 'video_ids': ['v']}],
                 'uncertainties': ['Konu ve dağıtım etkisini ayıramıyoruz.'], 'experiment': None}
