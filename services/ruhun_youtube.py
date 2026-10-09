@@ -83,5 +83,11 @@ class YouTube:
 
     async def content_type(self, video_id, start, end):
         rows = await self.query(video_id, start, end, ('views',), 'day,creatorContentType')
-        kinds = {row['creatorContentType'] for row in rows}
-        return 'SHORTS' if kinds == {'SHORTS'} else ('OTHER' if kinds else 'UNKNOWN')
+        # Live Analytics responses use lower camel case; the reference lists upper snake case.
+        kinds = {str(row.get('creatorContentType', '')).replace('_', '').casefold() for row in rows}
+        if kinds == {'shorts'}:
+            return 'SHORTS'
+        if kinds and kinds <= {'videoondemand', 'livestream', 'story'}:
+            return 'OTHER'
+        # Empty, unspecified or conflicting classifications remain pending.
+        return 'UNKNOWN'

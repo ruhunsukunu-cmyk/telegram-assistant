@@ -200,6 +200,14 @@ class AsyncCase(unittest.IsolatedAsyncioTestCase):
         def handler(request):
             return httpx.Response(200, json={'access_token': 'access', 'scope': ' '.join(SCOPES) + ' https://www.googleapis.com/auth/youtube'})
         with self.assertRaises(YouTubeError): await YouTube(CONFIG, httpx.MockTransport(handler)).verify()
+    async def test_live_content_type_values_and_ambiguity(self):
+        youtube = YouTube(CONFIG)
+        for values, expected in [(['shorts'], 'SHORTS'), (['SHORTS'], 'SHORTS'),
+                                 (['videoOnDemand'], 'OTHER'), (['VIDEO_ON_DEMAND'], 'OTHER'),
+                                 (['UNSPECIFIED'], 'UNKNOWN'), (['shorts', 'videoOnDemand'], 'UNKNOWN'),
+                                 ([], 'UNKNOWN')]:
+            youtube.query = AsyncMock(return_value=[{'creatorContentType': value} for value in values])
+            self.assertEqual(await youtube.content_type('v', '2026-09-01', '2026-10-01'), expected)
     async def test_collection_failure_preserves_previous(self):
         self.store.put('meta', 'collection', {'last_success': 'earlier'})
         youtube = SimpleNamespace(verify=AsyncMock(side_effect=YouTubeError('invalid')))
